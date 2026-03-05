@@ -1,0 +1,11 @@
+{
+  "language": "english",
+  "groups": [[0, 100], [101, 300], [301, 600], [601, 9999]],
+  "quotes": [
+    {"text": "Short quote here.", "source": "Author A", "id": 1, "length": 17},
+    {"text": "Another short one for testing purposes only.", "source": "Author B", "id": 2, "length": 44},
+    {"text": "This is a medium length quote that has been carefully crafted to exceed one hundred characters in total length so it falls into the medium category for filtering and testing purposes in our dataset package.", "source": "Author C", "id": 3, "length": 206},
+    {"text": "Here is a rather long quote that needs to be more than three hundred characters. We are going to keep writing and writing until we pass that threshold. The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump. The five boxing wizards jump quickly at dawn. Almost there, just a few more words needed to push this over three hundred one.", "source": "Author D", "id": 4, "length": 400},
+    {"text": "This is an extremely long quote, sometimes called a thicc quote, that must exceed six hundred and one characters in length. To achieve this, we must write a great deal of text. The purpose of having such a long passage is to test that our filtering logic correctly identifies quotes that fall into the longest category. We will keep writing sentences until we surpass the required character count. The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump. The five boxing wizards jump quickly at dawn. Sphinx of black quartz, judge my vow. We should be getting close to our target now, and with this final sentence we push well past the six hundred character mark.", "source": "Author E", "id": 5, "length": 729}
+  ]
+}

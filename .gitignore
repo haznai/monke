@@ -1,0 +1,14 @@
+# Binary
+monkeytype-tui
+
+# Cached datasets (fetched at runtime)
+datasets/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
