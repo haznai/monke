@@ -9,6 +9,7 @@ import (
 
 	"github.com/hazn/monkeytype-tui/internal/dataset"
 	"github.com/hazn/monkeytype-tui/internal/history"
+	"github.com/hazn/monkeytype-tui/internal/llm"
 	"github.com/hazn/monkeytype-tui/internal/menu"
 	"github.com/hazn/monkeytype-tui/internal/stats"
 	"github.com/hazn/monkeytype-tui/internal/theme"
@@ -36,6 +37,11 @@ type TestConfig struct {
 type datasetsLoadedMsg struct {
 	store *dataset.Store
 	err   error
+}
+
+type spellcheckMsg struct {
+	result *llm.Result
+	err    error
 }
 
 type Model struct {
@@ -221,6 +227,9 @@ func (m Model) updateResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = ScreenMenu
 		m.results = nil
 		return m, nil
+	case spellcheckMsg:
+		m.results.SetSpellcheck(msg.result, msg.err)
+		return m, nil
 	default:
 		updated, cmd := m.results.Update(msg)
 		if rm, ok := updated.(ResultsModel); ok {
@@ -328,9 +337,16 @@ func (m Model) finishTest() (Model, tea.Cmd) {
 	isPB := m.history.IsPersonalBest(record)
 	_ = m.history.Save(record)
 
-	rm := NewResultsModel(result, m.config, isPB, m.width, m.height)
+	rm := NewResultsModel(result, m.config, isPB, typedWords, targetWords, m.width, m.height)
 	m.results = &rm
 	m.typing = nil
 	m.screen = ScreenResults
-	return m, nil
+
+	// Fire async LLM spellcheck
+	spellcheckCmd := func() tea.Msg {
+		res, err := llm.Spellcheck(typedWords)
+		return spellcheckMsg{result: res, err: err}
+	}
+
+	return m, spellcheckCmd
 }

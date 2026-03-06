@@ -237,7 +237,7 @@ func (m TypingModel) renderWords() string {
 			if w.Correct {
 				rendered = theme.CompletedWord.Render(w.Target)
 			} else {
-				rendered = m.renderCurrentWord(w.Target, w.Typed)
+				rendered = m.renderDoneWord(w.Target, w.Typed)
 			}
 		} else if i == currentIdx {
 			// Currently typing this word
@@ -247,15 +247,10 @@ func (m TypingModel) renderWords() string {
 			rendered = theme.DimText.Render(w.Target)
 		}
 
+		// Line-breaking uses target width only, so overtyped chars
+		// overflow instead of reflowing the layout mid-typing.
 		wordWidth := utf8.RuneCountInString(w.Target)
-		if i == currentIdx && len(currentInput) > len(w.Target) {
-			wordWidth = utf8.RuneCountInString(currentInput)
-		}
-		if w.Done && !w.Correct && utf8.RuneCountInString(w.Typed) > wordWidth {
-			wordWidth = utf8.RuneCountInString(w.Typed)
-		}
 
-		// Check if adding this word would exceed line width
 		if currentLineWidth > 0 && currentLineWidth+1+wordWidth > maxWidth {
 			lines = append(lines, currentLine.String())
 			currentLine.Reset()
@@ -263,7 +258,12 @@ func (m TypingModel) renderWords() string {
 		}
 
 		if currentLineWidth > 0 {
-			currentLine.WriteString(" ")
+			// Cursor sits on the space after a fully-typed current word
+			if i == currentIdx+1 && utf8.RuneCountInString(currentInput) >= utf8.RuneCountInString(words[currentIdx].Target) {
+				currentLine.WriteString(theme.Cursor.Render(" "))
+			} else {
+				currentLine.WriteString(" ")
+			}
 			currentLineWidth++
 		}
 
@@ -309,6 +309,35 @@ func (m TypingModel) findCurrentLine(words []typing.WordState, currentIdx int, m
 	}
 
 	return line
+}
+
+// renderDoneWord shows a submitted word with correct/incorrect char coloring
+// but no cursor. Untyped chars render as incorrect (you skipped them).
+func (m TypingModel) renderDoneWord(target, typed string) string {
+	targetRunes := []rune(target)
+	typedRunes := []rune(typed)
+	var b strings.Builder
+
+	for i, tr := range targetRunes {
+		if i < len(typedRunes) {
+			if typedRunes[i] == tr {
+				b.WriteString(theme.CorrectChar.Render(string(tr)))
+			} else {
+				b.WriteString(theme.IncorrectChar.Render(string(tr)))
+			}
+		} else {
+			// Untyped chars (space pressed early)
+			b.WriteString(theme.IncorrectChar.Render(string(tr)))
+		}
+	}
+
+	if len(typedRunes) > len(targetRunes) {
+		for _, r := range typedRunes[len(targetRunes):] {
+			b.WriteString(theme.IncorrectChar.Render(string(r)))
+		}
+	}
+
+	return b.String()
 }
 
 func (m TypingModel) renderCurrentWord(target, input string) string {

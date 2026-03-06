@@ -36,7 +36,7 @@ var (
 
 	// Correct word that was already submitted
 	CompletedWord = lipgloss.NewStyle().
-			Foreground(DimColor)
+			Foreground(lipgloss.Color("#000000"))
 
 	// Cursor/caret on current character
 	Cursor = lipgloss.NewStyle().
