@@ -12,9 +12,11 @@ import (
 
 // SelectMsg is sent when the user confirms their selection
 type SelectMsg struct {
-	Mode     string
-	Value    int
-	WordList string
+	Mode      string
+	Value     int
+	WordList  string
+	NgramType string // "bigrams" or "trigrams" (ngram mode only)
+	Scope     int    // top N ngrams to use (ngram mode only)
 }
 
 // Section tracks which menu section the cursor is in
@@ -46,6 +48,7 @@ var (
 		{"words", "words"},
 		{"time", "time"},
 		{"quote", "quote"},
+		{"ngram", "ngram"},
 	}
 
 	wordValues = []valueOption{
@@ -69,6 +72,18 @@ var (
 		{"thicc", 3},
 	}
 
+	ngramTypeValues = []valueOption{
+		{"bigrams", 0},
+		{"trigrams", 1},
+	}
+
+	ngramScopeValues = []wordListOption{
+		{"top 50", "50"},
+		{"top 100", "100"},
+		{"top 150", "150"},
+		{"top 200", "200"},
+	}
+
 	wordLists = []wordListOption{
 		{"english 200", "english"},
 		{"english 1k", "english_1k"},
@@ -78,10 +93,10 @@ var (
 )
 
 type Model struct {
-	section      Section
-	modeIdx      int
-	valueIdx     int
-	wordListIdx  int
+	section     Section
+	modeIdx     int
+	valueIdx    int
+	wordListIdx int
 }
 
 func New() Model {
@@ -126,13 +141,15 @@ func (m *Model) moveLeft() {
 		if m.modeIdx > 0 {
 			m.modeIdx--
 			m.valueIdx = 0
+			m.wordListIdx = 0
 		}
 	case SectionValue:
 		if m.valueIdx > 0 {
 			m.valueIdx--
 		}
 	case SectionWordList:
-		if m.wordListIdx > 0 {
+		wlOpts := m.currentWordListOptions()
+		if wlOpts != nil && m.wordListIdx > 0 {
 			m.wordListIdx--
 		}
 	}
@@ -144,6 +161,7 @@ func (m *Model) moveRight() {
 		if m.modeIdx < len(modes)-1 {
 			m.modeIdx++
 			m.valueIdx = 0
+			m.wordListIdx = 0
 		}
 	case SectionValue:
 		vals := m.currentValues()
@@ -151,7 +169,8 @@ func (m *Model) moveRight() {
 			m.valueIdx++
 		}
 	case SectionWordList:
-		if m.wordListIdx < len(wordLists)-1 {
+		wlOpts := m.currentWordListOptions()
+		if wlOpts != nil && m.wordListIdx < len(wlOpts)-1 {
 			m.wordListIdx++
 		}
 	}
@@ -181,33 +200,82 @@ func (m *Model) prevSection() {
 	m.moveUp()
 }
 
+func (m Model) currentMode() string {
+	return modes[m.modeIdx].mode
+}
+
 func (m Model) currentValues() []valueOption {
-	switch modes[m.modeIdx].mode {
+	switch m.currentMode() {
 	case "words":
 		return wordValues
 	case "time":
 		return timeValues
 	case "quote":
 		return quoteValues
+	case "ngram":
+		return ngramTypeValues
 	default:
 		return wordValues
 	}
 }
 
-func (m Model) select_() tea.Cmd {
-	vals := m.currentValues()
-	wl := "english_1k"
-	if modes[m.modeIdx].mode != "quote" && m.wordListIdx < len(wordLists) {
-		wl = wordLists[m.wordListIdx].name
-	}
-	return func() tea.Msg {
-		return SelectMsg{
-			Mode:     modes[m.modeIdx].mode,
-			Value:    vals[m.valueIdx].value,
-			WordList: wl,
-		}
+// currentWordListOptions returns the word list / scope options for the third row,
+// or nil if the current mode has no third row.
+func (m Model) currentWordListOptions() []wordListOption {
+	switch m.currentMode() {
+	case "words", "time":
+		return wordLists
+	case "ngram":
+		return ngramScopeValues
+	default:
+		return nil
 	}
 }
+
+func (m Model) select_() tea.Cmd {
+	vals := m.currentValues()
+	mode := m.currentMode()
+
+	msg := SelectMsg{
+		Mode:  mode,
+		Value: vals[m.valueIdx].value,
+	}
+
+	switch mode {
+	case "ngram":
+		if m.valueIdx == 0 {
+			msg.NgramType = "bigrams"
+		} else {
+			msg.NgramType = "trigrams"
+		}
+		scopes := ngramScopeValues
+		if m.wordListIdx < len(scopes) {
+			// Parse scope from the name field ("50", "100", etc.)
+			switch scopes[m.wordListIdx].name {
+			case "50":
+				msg.Scope = 50
+			case "100":
+				msg.Scope = 100
+			case "150":
+				msg.Scope = 150
+			case "200":
+				msg.Scope = 200
+			}
+		}
+	case "quote":
+		// no word list
+	default:
+		if m.wordListIdx < len(wordLists) {
+			msg.WordList = wordLists[m.wordListIdx].name
+		} else {
+			msg.WordList = "english_1k"
+		}
+	}
+
+	return func() tea.Msg { return msg }
+}
+
+const menuWidth = 60
 
 func (m Model) View() string {
 	var b strings.Builder
@@ -216,26 +284,35 @@ func (m Model) View() string {
 	b.WriteString(theme.Title.Render("monkeytype-tui"))
 	b.WriteString("\n\n")
 
-	// Mode row
-	b.WriteString(m.renderRow("mode", SectionMode, func(i int) string {
+	// Mode
+	b.WriteString(theme.MenuHeader.Render("mode"))
+	b.WriteString("\n")
+	b.WriteString(m.renderRow(SectionMode, func(i int) string {
 		return modes[i].label
 	}, len(modes), m.modeIdx))
 	b.WriteString("\n\n")
 
-	// Value row
+	// Value
 	vals := m.currentValues()
-	b.WriteString(m.renderRow("", SectionValue, func(i int) string {
+	b.WriteString(m.renderRow(SectionValue, func(i int) string {
 		return vals[i].label
 	}, len(vals), m.valueIdx))
 	b.WriteString("\n\n")
 
-	// Word list row (not shown for quotes)
-	if modes[m.modeIdx].mode != "quote" {
-		b.WriteString(m.renderRow("words", SectionWordList, func(i int) string {
-			return wordLists[i].label
-		}, len(wordLists), m.wordListIdx))
-		b.WriteString("\n\n")
+	// Word list / scope (always reserve the line to prevent layout shift)
+	wlOpts := m.currentWordListOptions()
+	if wlOpts != nil {
+		label := "words"
+		if m.currentMode() == "ngram" {
+			label = "scope"
+		}
+		b.WriteString(theme.MenuHeader.Render(label))
+		b.WriteString("\n")
+		b.WriteString(m.renderRow(SectionWordList, func(i int) string {
+			return wlOpts[i].label
+		}, len(wlOpts), m.wordListIdx))
 	}
+	b.WriteString("\n\n")
 
 	// Footer
 	footer := fmt.Sprintf(
@@ -248,15 +325,12 @@ func (m Model) View() string {
 
 	return lipgloss.NewStyle().
 		Padding(2, 4).
+		Width(menuWidth).
 		Render(b.String())
 }
 
-func (m Model) renderRow(label string, section Section, getText func(int) string, count int, selected int) string {
+func (m Model) renderRow(section Section, getText func(int) string, count int, selected int) string {
 	var parts []string
-
-	if label != "" {
-		parts = append(parts, theme.Subtitle.Render(label+"  "))
-	}
 
 	for i := 0; i < count; i++ {
 		text := getText(i)

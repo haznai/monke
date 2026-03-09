@@ -28,10 +28,16 @@ const (
 )
 
 type TestConfig struct {
-	Mode     string // "words", "time", "quote"
-	Value    int    // word count or seconds or QuoteLength
-	WordList string // "english", "english_1k", etc.
+	Mode        string // "words", "time", "quote", "ngram"
+	Value       int    // word count, seconds, QuoteLength, or ngram type index
+	WordList    string // "english", "english_1k", etc.
+	NgramType   string // "bigrams" or "trigrams" (ngram mode only)
+	Scope       int    // top N ngrams to use (ngram mode only)
+	NgramLesson int    // current lesson (1-indexed, for display)
+	NgramTotal  int    // total number of lessons
 }
+
+const ngramWPMThreshold = 120.0
 
 // Messages
 type datasetsLoadedMsg struct {
@@ -45,17 +51,19 @@ type spellcheckMsg struct {
 }
 
 type Model struct {
-	screen  Screen
-	width   int
-	height  int
-	menu    menu.Model
-	typing  *TypingModel
-	results *ResultsModel
-	config  TestConfig
-	dataDir string
-	store   *dataset.Store
-	history *history.Store
-	err     string
+	screen         Screen
+	width          int
+	height         int
+	menu           menu.Model
+	typing         *TypingModel
+	results        *ResultsModel
+	config         TestConfig
+	dataDir        string
+	store          *dataset.Store
+	history        *history.Store
+	err            string
+	ngramLessons   [][]string
+	ngramLessonIdx int
 }
 
 func New() Model {
@@ -180,9 +188,11 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case menu.SelectMsg:
 		m.config = TestConfig{
-			Mode:     msg.Mode,
-			Value:    msg.Value,
-			WordList: msg.WordList,
+			Mode:      msg.Mode,
+			Value:     msg.Value,
+			WordList:  msg.WordList,
+			NgramType: msg.NgramType,
+			Scope:     msg.Scope,
 		}
 		return m.startTypingTest()
 	}
@@ -275,6 +285,17 @@ func (m Model) startTypingTest() (Model, tea.Cmd) {
 			return m, nil
 		}
 		words = strings.Fields(q.Text)
+
+	case "ngram":
+		ngrams := dataset.Bigrams
+		if m.config.NgramType == "trigrams" {
+			ngrams = dataset.Trigrams
+		}
+		m.ngramLessons = dataset.GenerateNgramLessons(ngrams, m.config.Scope, 2, 3)
+		m.ngramLessonIdx = 0
+		m.config.NgramLesson = 1
+		m.config.NgramTotal = len(m.ngramLessons)
+		words = m.ngramLessons[0]
 	}
 
 	tm := NewTypingModel(words, m.config, m.width, m.height)
@@ -286,6 +307,33 @@ func (m Model) startTypingTest() (Model, tea.Cmd) {
 func (m Model) finishTest() (Model, tea.Cmd) {
 	if m.typing == nil {
 		return m, nil
+	}
+
+	// Ngram mode: check WPM threshold, advance or retry
+	if m.config.Mode == "ngram" {
+		engine := m.typing.engine
+		duration := engine.ElapsedTime()
+		totalChars := engine.TotalTypedChars()
+		wpm := float64(totalChars) / 5.0 / duration.Minutes()
+
+		if wpm >= ngramWPMThreshold {
+			m.ngramLessonIdx++
+			if m.ngramLessonIdx < len(m.ngramLessons) {
+				m.config.NgramLesson = m.ngramLessonIdx + 1
+				words := m.ngramLessons[m.ngramLessonIdx]
+				tm := NewTypingModel(words, m.config, m.width, m.height)
+				tm.lastWPM = wpm
+				m.typing = &tm
+				return m, nil
+			}
+			// All lessons done, fall through to results
+		} else {
+			// Failed, restart same lesson
+			tm := NewTypingModel(m.ngramLessons[m.ngramLessonIdx], m.config, m.width, m.height)
+			tm.lastWPM = wpm
+			m.typing = &tm
+			return m, nil
+		}
 	}
 
 	engine := m.typing.engine

@@ -80,8 +80,7 @@ var (
 			Foreground(DimColor)
 
 	MenuHeader = lipgloss.NewStyle().
-			Foreground(TextColor).
-			Bold(true)
+			Foreground(AccentColor)
 
 	// Footer
 	FooterStyle = lipgloss.NewStyle().

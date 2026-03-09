@@ -26,8 +26,9 @@ type TypingModel struct {
 	width     int
 	height    int
 	liveWPM   float64
-	timeLeft  int // seconds remaining (time mode only)
+	timeLeft  int  // seconds remaining (time mode only)
 	timerDone bool
+	lastWPM   float64 // ngram mode: WPM from previous attempt
 }
 
 func NewTypingModel(words []string, config TestConfig, width, height int) TypingModel {
@@ -213,6 +214,9 @@ func (m TypingModel) renderHeader() string {
 		right = theme.Subtitle.Render(fmt.Sprintf("time %ds  %s", m.config.Value, m.config.WordList))
 	case "quote":
 		right = theme.Subtitle.Render("quote")
+	case "ngram":
+		right = theme.Subtitle.Render(fmt.Sprintf("lesson %d/%d  %s  top %d",
+			m.config.NgramLesson, m.config.NgramTotal, m.config.NgramType, m.config.Scope))
 	}
 
 	gap := max(0, min(m.width-4, 80)-lipgloss.Width(left)-lipgloss.Width(right))
@@ -378,6 +382,14 @@ func (m TypingModel) renderFooter() string {
 			"%s %s",
 			theme.StatLabel.Render("time"),
 			theme.StatValue.Render(fmt.Sprintf("%ds", m.timeLeft)),
+		))
+	}
+
+	if m.config.Mode == "ngram" && m.lastWPM > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%s %s",
+			theme.StatLabel.Render("last"),
+			theme.DimText.Render(fmt.Sprintf("%.0f wpm", m.lastWPM)),
 		))
 	}
 
