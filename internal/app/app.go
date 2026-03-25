@@ -37,7 +37,7 @@ type TestConfig struct {
 	NgramTotal  int    // total number of lessons
 }
 
-const ngramWPMThreshold = 120.0
+const ngramWPMThreshold = 100.0
 
 // Messages
 type datasetsLoadedMsg struct {
@@ -284,7 +284,7 @@ func (m Model) startTypingTest() (Model, tea.Cmd) {
 			m.screen = ScreenMenu
 			return m, nil
 		}
-		words = strings.Fields(q.Text)
+		words = strings.Fields(strings.ToLower(q.Text))
 
 	case "ngram":
 		ngrams := dataset.Bigrams

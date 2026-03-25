@@ -32,7 +32,7 @@ go test ./... -v      # run all tests
 go build -o monkeytype-tui .
 ```
 
-Go binary location: `/opt/homebrew/bin/go`
+Use `go` (whatever is on PATH), not a hardcoded binary path.
 
 ## Architecture
 
@@ -100,13 +100,17 @@ Tracks personal bests per mode/wordlist/duration combo.
 
 ## Testing
 
+This codebase must be well tested. Every behavioral path needs a test. If a bug is found, a regression test goes in before the fix. New features ship with tests or they don't ship.
+
 - NO MOCKS. Unit tests use real data, real files (t.TempDir()), real calculations.
 - Exception: httptest.NewServer for HTTP fetch tests.
 - Test fixtures live in `testdata/` directories.
 - Run only touched package tests during dev: `go test ./internal/typing/ -v`
-- Integration tests in `internal/app/` exercise the full pipeline.
+- Integration tests in `internal/app/` exercise the full pipeline (engine -> stats -> history -> results).
 - Write tests with hand-verified math first, then implement. Red/green TDD.
 - Tests must test the actual thing. If a test passes with the implementation deleted, it's worthless.
+- Cover edge cases aggressively: empty input, single word, punctuation in quotes, LLM mangling correctly-typed words, mismatched word counts.
+- When fixing a bug, write the test that would have caught it FIRST.
 
 ## Adding Features
 

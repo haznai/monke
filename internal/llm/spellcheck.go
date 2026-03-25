@@ -25,9 +25,12 @@ type Result struct {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
+	Model              string        `json:"model"`
+	Messages           []chatMessage `json:"messages"`
+	Temperature        float64       `json:"temperature"`
+	TopP               float64       `json:"top_p"`
+	MaxCompletionToks  int           `json:"max_completion_tokens"`
+	ReasoningEffort    string        `json:"reasoning_effort"`
 }
 
 type chatMessage struct {
@@ -43,7 +46,10 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
-const systemPrompt = "Fix any spelling and grammar errors in the following text. Return only the corrected text with no explanation. Preserve the original formatting and case."
+const (
+	systemPrompt = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
+	defaultURL   = "https://api.groq.com/openai/v1/chat/completions"
+)
 
 func loadAPIKey() string {
 	if key := os.Getenv("GROQ_API_KEY"); key != "" {
@@ -76,15 +82,21 @@ func Spellcheck(typedWords []string) (*Result, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("GROQ_API_KEY not set (env or ~/.monkeytype-tui/.env)")
 	}
+	return spellcheck(typedWords, apiKey, defaultURL, http.DefaultClient)
+}
 
+func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client) (*Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	input := strings.Join(typedWords, " ")
 
 	reqBody := chatRequest{
-		Model:       "openai/gpt-oss-120b",
-		Temperature: 0,
+		Model:             "openai/gpt-oss-20b",
+		Temperature:       0,
+		TopP:              0.2,
+		MaxCompletionToks: 8192,
+		ReasoningEffort:   "low",
 		Messages: []chatMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: input},
@@ -96,14 +108,14 @@ func Spellcheck(typedWords []string) (*Result, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("api call: %w", err)
 	}

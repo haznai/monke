@@ -68,18 +68,39 @@ func (e *Engine) Space() {
 	}
 	e.start()
 
-	typed := string(e.input)
-	w := &e.words[e.currentIdx]
-	w.Typed = typed
-	w.Done = true
-	w.Correct = typed == w.Target
+	target := []rune(e.words[e.currentIdx].Target)
+	threshold := max(1, len(target)-2)
 
-	e.input = e.input[:0]
-	e.currentIdx++
+	if len(e.input) >= threshold {
+		// Near end of word (within last 2 chars): advance to next word
+		typed := string(e.input)
+		w := &e.words[e.currentIdx]
+		w.Typed = typed
+		w.Done = true
+		w.Correct = typed == w.Target
 
-	if e.currentIdx >= len(e.words) {
-		e.finished = true
-		e.endTime = time.Now()
+		e.input = e.input[:0]
+		e.currentIdx++
+
+		if e.currentIdx >= len(e.words) {
+			e.finished = true
+			e.endTime = time.Now()
+		}
+	} else {
+		// Not far enough into the word: treat space as a mistyped character
+		e.input = append(e.input, ' ')
+
+		// Auto-finish on last word if input reached target length
+		if e.currentIdx == len(e.words)-1 && len(e.input) >= len(target) {
+			w := &e.words[e.currentIdx]
+			w.Typed = string(e.input)
+			w.Done = true
+			w.Correct = w.Typed == w.Target
+			e.input = e.input[:0]
+			e.currentIdx++
+			e.finished = true
+			e.endTime = time.Now()
+		}
 	}
 }
 

@@ -186,14 +186,15 @@ func TestFullTypingFlow_SkipWord(t *testing.T) {
 	}
 	engine.Space()
 
-	// Skip "beta" entirely (space with empty input)
+	// "Skip" beta by typing garbage past the threshold (threshold for "beta" = 2)
+	engine.TypeChar('x')
+	engine.TypeChar('y')
 	engine.Space()
 
-	// Type "gamma" correctly
+	// Type "gamma" correctly (last word, auto-finishes)
 	for _, ch := range "gamma" {
 		engine.TypeChar(ch)
 	}
-	engine.Space()
 
 	if !engine.IsFinished() {
 		t.Fatal("should be finished")
@@ -204,10 +205,10 @@ func TestFullTypingFlow_SkipWord(t *testing.T) {
 		t.Error("alpha should be correct")
 	}
 	if ws[1].Correct {
-		t.Error("beta should be incorrect (skipped)")
+		t.Error("beta should be incorrect (garbage typed)")
 	}
-	if ws[1].Typed != "" {
-		t.Errorf("skipped word should have empty typed, got %q", ws[1].Typed)
+	if ws[1].Typed != "xy" {
+		t.Errorf("skipped word typed = %q, want 'xy'", ws[1].Typed)
 	}
 	if !ws[2].Correct {
 		t.Error("gamma should be correct")

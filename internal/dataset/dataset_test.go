@@ -236,7 +236,7 @@ func TestQuoteWords(t *testing.T) {
 	q := &qc.Quotes[0] // "Short quote here."
 	words := qc.QuoteWords(q)
 
-	expected := []string{"Short", "quote", "here."}
+	expected := []string{"short", "quote", "here."}
 	if len(words) != len(expected) {
 		t.Fatalf("QuoteWords returned %d words, want %d", len(words), len(expected))
 	}

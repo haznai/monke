@@ -117,7 +117,7 @@ func (qc *QuoteCollection) RandomQuote(length QuoteLength) (*Quote, error) {
 
 // QuoteWords splits a quote's text into words using whitespace.
 func (qc *QuoteCollection) QuoteWords(q *Quote) []string {
-	return strings.Fields(q.Text)
+	return strings.Fields(strings.ToLower(q.Text))
 }
 
 // AvailableWordLists returns the names of all supported word lists.

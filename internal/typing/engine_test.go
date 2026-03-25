@@ -140,22 +140,48 @@ func TestIncorrectWord(t *testing.T) {
 	}
 }
 
-func TestEmptySpaceSubmitsIncorrect(t *testing.T) {
+func TestSpaceNearStart_TreatedAsChar(t *testing.T) {
 	e := NewEngine([]string{"hello", "world"})
-	e.Space() // empty submit
+	e.Space() // empty input, threshold 3, doesn't advance
 
+	if e.CurrentWordIndex() != 0 {
+		t.Errorf("should still be on word 0, got %d", e.CurrentWordIndex())
+	}
+	if e.CurrentInput() != " " {
+		t.Errorf("input = %q, want single space", e.CurrentInput())
+	}
+	if e.Words()[0].Done {
+		t.Error("word 0 should NOT be done")
+	}
+}
+
+func TestSpaceNearEnd_Advances(t *testing.T) {
+	e := NewEngine([]string{"hello", "world"})
+	typeWord(e, "hel") // 3 chars, threshold for "hello" = max(1, 3) = 3
+	e.Space()          // 3 >= 3, advance
+
+	if e.CurrentWordIndex() != 1 {
+		t.Errorf("should be on word 1, got %d", e.CurrentWordIndex())
+	}
 	w := e.Words()[0]
 	if !w.Done {
 		t.Error("word 0 should be done")
 	}
 	if w.Correct {
-		t.Error("word 0 should be incorrect (empty input)")
+		t.Error("word 0 should be incorrect (typed 'hel' not 'hello')")
 	}
-	if w.Typed != "" {
-		t.Errorf("typed = %q, want empty", w.Typed)
+}
+
+func TestSpaceBelowThreshold_TreatedAsChar(t *testing.T) {
+	e := NewEngine([]string{"hello", "world"})
+	typeWord(e, "he") // 2 chars, threshold for "hello" = 3
+	e.Space()         // 2 < 3, space treated as char
+
+	if e.CurrentWordIndex() != 0 {
+		t.Errorf("should still be on word 0, got %d", e.CurrentWordIndex())
 	}
-	if e.CurrentWordIndex() != 1 {
-		t.Errorf("currentIdx = %d, want 1", e.CurrentWordIndex())
+	if e.CurrentInput() != "he " {
+		t.Errorf("input = %q, want 'he '", e.CurrentInput())
 	}
 }
 
@@ -277,16 +303,16 @@ func TestReset_RestoresInitialState(t *testing.T) {
 }
 
 func TestReset_CanTypeAgain(t *testing.T) {
-	e := NewEngine([]string{"hello"})
-	e.TypeChar('h')
-	e.Space()
+	e := NewEngine([]string{"hi"})
+	typeWord(e, "x") // wrong char
+	e.Space()        // threshold for "hi" = 1, 1 >= 1, advance + finish
+
 	if !e.IsFinished() {
 		t.Fatal("should be finished")
 	}
 
 	e.Reset()
-	typeWord(e, "hello")
-	e.Space()
+	typeWord(e, "hi") // auto-finish on last word, correct
 
 	if !e.IsFinished() {
 		t.Error("should be finished again after re-typing")
@@ -531,7 +557,7 @@ func TestSnapshots_ClearedOnReset(t *testing.T) {
 
 func TestSpaceOnEmpty_StartsTimer(t *testing.T) {
 	e := NewEngine([]string{"hello", "world"})
-	e.Space() // empty submit, but should start timer
+	e.Space() // treated as mistyped char, but still starts timer
 
 	if !e.IsStarted() {
 		t.Error("Space should start the timer even with empty input")

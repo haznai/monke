@@ -199,7 +199,7 @@ func (m TypingModel) View() string {
 
 	return lipgloss.NewStyle().
 		Padding(1, 2).
-		Width(min(m.width-4, 80)).
+		Width(min(m.width, 80)).
 		Render(b.String())
 }
 
@@ -219,7 +219,7 @@ func (m TypingModel) renderHeader() string {
 			m.config.NgramLesson, m.config.NgramTotal, m.config.NgramType, m.config.Scope))
 	}
 
-	gap := max(0, min(m.width-4, 80)-lipgloss.Width(left)-lipgloss.Width(right))
+	gap := max(0, min(m.width, 80)-10-lipgloss.Width(left)-lipgloss.Width(right))
 	return left + strings.Repeat(" ", gap) + right
 }
 
@@ -227,7 +227,7 @@ func (m TypingModel) renderWords() string {
 	words := m.engine.Words()
 	currentIdx := m.engine.CurrentWordIndex()
 	currentInput := m.engine.CurrentInput()
-	maxWidth := min(m.width-8, 76)
+	maxWidth := min(m.width, 80) - 10
 
 	var lines []string
 	var currentLine strings.Builder
