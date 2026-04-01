@@ -46,6 +46,9 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
+// Set at build time via -ldflags "-X github.com/hazn/monkeytype-tui/internal/llm.embeddedAPIKey=..."
+var embeddedAPIKey string
+
 const (
 	systemPrompt = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
 	defaultURL   = "https://api.groq.com/openai/v1/chat/completions"
@@ -57,24 +60,21 @@ func loadAPIKey() string {
 	}
 
 	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	f, err := os.Open(filepath.Join(home, ".monkeytype-tui", ".env"))
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if k, v, ok := strings.Cut(line, "="); ok && k == "GROQ_API_KEY" {
-			return v
+	if err == nil {
+		f, err := os.Open(filepath.Join(home, ".monkeytype-tui", ".env"))
+		if err == nil {
+			defer f.Close()
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if k, v, ok := strings.Cut(line, "="); ok && k == "GROQ_API_KEY" {
+					return v
+				}
+			}
 		}
 	}
-	return ""
+
+	return embeddedAPIKey
 }
 
 func Spellcheck(typedWords []string) (*Result, error) {

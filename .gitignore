@@ -21,5 +21,8 @@ devenv.local.yaml
 # direnv
 .direnv
 
+# local secrets
+.env
+
 # pre-commit
 .pre-commit-config.yaml
