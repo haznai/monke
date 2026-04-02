@@ -127,9 +127,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "enter":
 			return m, m.select_()
 		case "tab":
-			m.nextSection()
+			m.moveRight()
 		case "shift+tab":
-			m.prevSection()
+			m.moveLeft()
 		}
 	}
 	return m, nil
