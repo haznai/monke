@@ -45,10 +45,10 @@ type wordListOption struct {
 
 var (
 	modes = []modeOption{
-		{"words", "words"},
-		{"time", "time"},
 		{"quote", "quote"},
 		{"ngram", "ngram"},
+		{"time", "time"},
+		{"words", "words"},
 	}
 
 	wordValues = []valueOption{
