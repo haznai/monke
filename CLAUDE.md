@@ -74,7 +74,7 @@ Inspired by [ngram-type](https://github.com/ranelpadon/ngram-type). Drills the m
 - 200 bigrams ("th", "he", "in", ...) and 200 trigrams ("the", "and", "ing", ...) ranked by frequency, hardcoded in `dataset/ngrams.go`
 - Scope: top 50 / 100 / 150 / 200 from the frequency list
 - Lesson generation: shuffle the scoped pool, pair into chunks of 2, repeat each chunk 3 times (e.g. "th he th he th he")
-- Progression: must hit 120 WPM on a lesson to advance. Fail = retype same lesson. Pass = next lesson.
+- Progression: must hit 100 WPM on a lesson AND type every word correctly to advance. Fail = retype same lesson. Pass = next lesson.
 - Lesson counter shown in header ("lesson 5/25"), last attempt WPM shown in footer
 
 ## Typing Mechanics
