@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -316,7 +317,7 @@ func (m Model) finishTest() (Model, tea.Cmd) {
 		totalChars := engine.TotalTypedChars()
 		wpm := float64(totalChars) / 5.0 / duration.Minutes()
 
-		if wpm >= ngramWPMThreshold {
+		if math.Round(wpm) >= ngramWPMThreshold {
 			m.ngramLessonIdx++
 			if m.ngramLessonIdx < len(m.ngramLessons) {
 				m.config.NgramLesson = m.ngramLessonIdx + 1

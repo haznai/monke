@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,5 +181,25 @@ func TestCalcLLMWPM_ZeroMinutes(t *testing.T) {
 	wpm := m.calcLLMWPM(1, 0)
 	if wpm != 0 {
 		t.Errorf("wpm = %.1f, want 0 for zero duration", wpm)
+	}
+}
+
+func TestResultsView_ShowsLLMErrorDetails(t *testing.T) {
+	m := ResultsModel{
+		result: stats.TestResult{
+			CorrectWords: 1,
+			TotalWords:   2,
+		},
+		llmErr: errors.New("api returned 401"),
+		width:  80,
+		height: 24,
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "llm error:") {
+		t.Fatalf("view should mention llm error, got %q", view)
+	}
+	if !strings.Contains(view, "api returned 401") {
+		t.Fatalf("view should include LLM error details, got %q", view)
 	}
 }

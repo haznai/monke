@@ -62,8 +62,8 @@ func TestSpellcheck_SendsCorrectRequest(t *testing.T) {
 		if req.TopP != 0.2 {
 			t.Errorf("top_p = %f, want 0.2", req.TopP)
 		}
-		if req.MaxCompletionToks != 8192 {
-			t.Errorf("max_completion_tokens = %d, want 8192", req.MaxCompletionToks)
+		if req.MaxCompletionToks != 128 {
+			t.Errorf("max_completion_tokens = %d, want 128", req.MaxCompletionToks)
 		}
 		if req.ReasoningEffort != "low" {
 			t.Errorf("reasoning_effort = %q, want low", req.ReasoningEffort)
@@ -166,6 +166,27 @@ func TestSpellcheck_APIError(t *testing.T) {
 	}
 	if got := err.Error(); got != "api returned 401" {
 		t.Errorf("error = %q, want 'api returned 401'", got)
+	}
+}
+
+func TestSpellcheck_APIErrorIncludesMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"message": "Request too large for model",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	_, err := spellcheck([]string{"test"}, "test-key", srv.URL, srv.Client())
+	if err == nil {
+		t.Fatal("expected error for 413 response")
+	}
+	if got := err.Error(); got != "api returned 413: Request too large for model" {
+		t.Errorf("error = %q, want detailed API message", got)
 	}
 }
 

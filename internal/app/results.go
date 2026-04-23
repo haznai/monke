@@ -97,7 +97,11 @@ func (m ResultsModel) View() string {
 	if m.llmErr != nil || m.llmResult == nil {
 		b.WriteString(m.renderRawResults())
 		b.WriteString("\n")
-		b.WriteString(theme.DimText.Render("llm unavailable"))
+		if m.llmErr != nil {
+			b.WriteString(theme.FailedText.Render("llm error: "+m.llmErr.Error()))
+		} else {
+			b.WriteString(theme.DimText.Render("llm unavailable"))
+		}
 		b.WriteString("\n\n")
 		b.WriteString(m.renderFooter())
 		return lipgloss.NewStyle().

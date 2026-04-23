@@ -46,12 +46,20 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
+type errorResponse struct {
+	Error struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 // Set at build time via -ldflags "-X github.com/hazn/monkeytype-tui/internal/llm.embeddedAPIKey=..."
 var embeddedAPIKey string
 
 const (
-	systemPrompt = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
-	defaultURL   = "https://api.groq.com/openai/v1/chat/completions"
+	systemPrompt        = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
+	defaultURL          = "https://api.groq.com/openai/v1/chat/completions"
+	modelName           = "openai/gpt-oss-20b"
+	maxCompletionTokens = 128
 )
 
 func loadAPIKey() string {
@@ -92,10 +100,10 @@ func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client
 	input := strings.Join(typedWords, " ")
 
 	reqBody := chatRequest{
-		Model:             "openai/gpt-oss-20b",
+		Model:             modelName,
 		Temperature:       0,
 		TopP:              0.2,
-		MaxCompletionToks: 8192,
+		MaxCompletionToks: maxCompletionTokens,
 		ReasoningEffort:   "low",
 		Messages: []chatMessage{
 			{Role: "system", Content: systemPrompt},
@@ -122,6 +130,10 @@ func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		var apiErr errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err == nil && apiErr.Error.Message != "" {
+			return nil, fmt.Errorf("api returned %d: %s", resp.StatusCode, apiErr.Error.Message)
+		}
 		return nil, fmt.Errorf("api returned %d", resp.StatusCode)
 	}
 
