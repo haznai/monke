@@ -21,7 +21,7 @@ This counts every target character you attempted (even if you mistyped it) divid
 - **words**: type N random words from a word list. Classic MonkeyType.
 - **time**: type as many words as possible in N seconds.
 - **quote**: type a random English quote (short/medium/long/thicc).
-- **ngram**: drill common character sequences (bigrams/trigrams). Lesson-by-lesson progression, must hit 120 WPM to advance. Builds muscle memory for the most frequent English patterns.
+- **ngram**: drill common character sequences (bigrams/trigrams). Lesson-by-lesson progression, must hit 100 WPM and type every ngram correctly to advance. Builds muscle memory for the most frequent English patterns.
 
 ## Quick Reference
 
@@ -88,14 +88,14 @@ Inspired by [ngram-type](https://github.com/ranelpadon/ngram-type). Drills the m
 
 ## Datasets
 
-Cached at `~/.monkeytype-tui/datasets/`. Fetched from MonkeyType GitHub on first run.
+Cached under the OS user config dir, for example macOS `~/Library/Application Support/monkeytype-tui/datasets/`. Fetched from MonkeyType GitHub on first run.
 Word lists: english (200), english_1k, english_5k, english_10k.
 Quotes: 6400+ English quotes in 4 length categories.
 Ngrams: hardcoded, no fetch needed.
 
 ## History
 
-Stored at `~/.monkeytype-tui/history.json`. Every test result is saved.
+Stored under the OS user config dir, for example macOS `~/Library/Application Support/monkeytype-tui/history.json`. Every test result is saved.
 Tracks personal bests per mode/wordlist/duration combo.
 
 ## Testing

@@ -83,7 +83,7 @@ Format:
 ```
 
 ### Storage
-- Datasets cached locally in `~/.monkeytype-tui/datasets/`
+- Datasets cached locally under the OS user config dir, for example macOS `~/Library/Application Support/monkeytype-tui/datasets/`
 - Fetched on first run or via `monkeytype-tui fetch` command
 - Raw JSON files, loaded into memory at startup
 
@@ -136,7 +136,7 @@ This is the number that matters for the "type fast + LLM cleanup" workflow.
 ## Stats Persistence
 
 ### History File
-- Stored at `~/.monkeytype-tui/history.json`
+- Stored under the OS user config dir, for example macOS `~/Library/Application Support/monkeytype-tui/history.json`
 - Append-only log of every test result
 
 ```json
@@ -210,7 +210,7 @@ This is the number that matters for the "type fast + LLM cleanup" workflow.
 - **Language**: Go
 - **TUI Framework**: Bubbletea (Elm architecture, tight event loop)
 - **Styling**: Lipgloss
-- **Config/Data**: JSON files in `~/.monkeytype-tui/`
+- **Config/Data**: files under the OS user config dir, for example macOS `~/Library/Application Support/monkeytype-tui/`
 
 ## Project Structure
 

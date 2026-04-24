@@ -30,6 +30,7 @@ type ResultsModel struct {
 	typedWords  []string
 	llmResult   *llm.Result
 	llmErr      error
+	llmLogErr   error
 	llmLoading  bool
 }
 
@@ -46,10 +47,11 @@ func NewResultsModel(result stats.TestResult, config TestConfig, isPB bool, type
 	}
 }
 
-func (m *ResultsModel) SetSpellcheck(result *llm.Result, err error) {
+func (m *ResultsModel) SetSpellcheck(result *llm.Result, err, logErr error) {
 	m.llmLoading = false
 	m.llmResult = result
 	m.llmErr = err
+	m.llmLogErr = logErr
 }
 
 func (m ResultsModel) Init() tea.Cmd {
@@ -98,9 +100,13 @@ func (m ResultsModel) View() string {
 		b.WriteString(m.renderRawResults())
 		b.WriteString("\n")
 		if m.llmErr != nil {
-			b.WriteString(theme.FailedText.Render("llm error: "+m.llmErr.Error()))
+			b.WriteString(theme.FailedText.Render("llm error: " + m.llmErr.Error()))
 		} else {
 			b.WriteString(theme.DimText.Render("llm unavailable"))
+		}
+		if m.llmLogErr != nil {
+			b.WriteString("\n")
+			b.WriteString(theme.FailedText.Render("llm log error: " + m.llmLogErr.Error()))
 		}
 		b.WriteString("\n\n")
 		b.WriteString(m.renderFooter())
@@ -142,6 +148,10 @@ func (m ResultsModel) View() string {
 	corrections := m.renderCorrections()
 	if corrections != "" {
 		b.WriteString(corrections)
+		b.WriteString("\n")
+	}
+	if m.llmLogErr != nil {
+		b.WriteString(theme.FailedText.Render("llm log error: " + m.llmLogErr.Error()))
 		b.WriteString("\n")
 	}
 

@@ -2,18 +2,19 @@ package app
 
 import (
 	"fmt"
-	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/hazn/monkeytype-tui/internal/appdir"
 	"github.com/hazn/monkeytype-tui/internal/dataset"
 	"github.com/hazn/monkeytype-tui/internal/history"
 	"github.com/hazn/monkeytype-tui/internal/llm"
+	"github.com/hazn/monkeytype-tui/internal/llmlog"
 	"github.com/hazn/monkeytype-tui/internal/menu"
 	"github.com/hazn/monkeytype-tui/internal/stats"
 	"github.com/hazn/monkeytype-tui/internal/theme"
+	"github.com/hazn/monkeytype-tui/internal/typing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -30,14 +31,15 @@ const (
 
 type TestConfig struct {
 	Mode        string // "words", "time", "quote", "ngram"
-	Value       int    // word count, seconds, QuoteLength, or ngram type index
+	Value       int    // word count, seconds, QuoteLength, or ngram scope
 	WordList    string // "english", "english_1k", etc.
-	NgramType   string // "bigrams" or "trigrams" (ngram mode only)
 	Scope       int    // top N ngrams to use (ngram mode only)
 	NgramLesson int    // current lesson (1-indexed, for display)
 	NgramTotal  int    // total number of lessons
 }
 
+// Ngram progression has two independent gates: at least 100 WPM and every
+// submitted ngram must exactly match the target. Fast garbage does not advance.
 const ngramWPMThreshold = 100.0
 
 // Messages
@@ -49,6 +51,7 @@ type datasetsLoadedMsg struct {
 type spellcheckMsg struct {
 	result *llm.Result
 	err    error
+	logErr error
 }
 
 type Model struct {
@@ -62,31 +65,33 @@ type Model struct {
 	dataDir        string
 	store          *dataset.Store
 	history        *history.Store
+	llmLog         *llmlog.Store
 	err            string
 	ngramLessons   [][]string
 	ngramLessonIdx int
 }
 
 func New() Model {
-	dataDir := defaultDataDir()
-	histPath := filepath.Join(dataDir, "history.json")
-	hist := history.NewStore(histPath)
+	_ = appdir.MigrateLegacyData()
+
+	hist := history.NewStore(filepath.Join(defaultDataDir(), "history.json"))
 	_ = hist.Load()
 
 	return Model{
 		screen:  ScreenLoading,
 		menu:    menu.New(),
-		dataDir: filepath.Join(dataDir, "datasets"),
+		dataDir: filepath.Join(defaultDataDir(), "datasets"),
 		history: hist,
+		llmLog:  llmlog.NewStore(defaultLLMLogPath()),
 	}
 }
 
 func defaultDataDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".monkeytype-tui"
-	}
-	return filepath.Join(home, ".monkeytype-tui")
+	return appdir.Root()
+}
+
+func defaultLLMLogPath() string {
+	return appdir.LLMLogPath()
 }
 
 func (m Model) Init() tea.Cmd {
@@ -189,11 +194,9 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case menu.SelectMsg:
 		m.config = TestConfig{
-			Mode:      msg.Mode,
-			Value:     msg.Value,
-			WordList:  msg.WordList,
-			NgramType: msg.NgramType,
-			Scope:     msg.Scope,
+			Mode:  msg.Mode,
+			Value: msg.Value,
+			Scope: msg.Scope,
 		}
 		return m.startTypingTest()
 	}
@@ -239,7 +242,7 @@ func (m Model) updateResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.results = nil
 		return m, nil
 	case spellcheckMsg:
-		m.results.SetSpellcheck(msg.result, msg.err)
+		m.results.SetSpellcheck(msg.result, msg.err, msg.logErr)
 		return m, nil
 	default:
 		updated, cmd := m.results.Update(msg)
@@ -288,11 +291,15 @@ func (m Model) startTypingTest() (Model, tea.Cmd) {
 		words = strings.Fields(strings.ToLower(q.Text))
 
 	case "ngram":
-		ngrams := dataset.Bigrams
-		if m.config.NgramType == "trigrams" {
-			ngrams = dataset.Trigrams
+		scope := m.config.Scope
+		if scope == 0 {
+			scope = m.config.Value
 		}
-		m.ngramLessons = dataset.GenerateNgramLessons(ngrams, m.config.Scope, 2, 3)
+		if scope == 0 {
+			scope = 50
+		}
+		m.config.Scope = scope
+		m.ngramLessons = dataset.GenerateNgramLessons(dataset.Bigrams, scope, 2, 3)
 		m.ngramLessonIdx = 0
 		m.config.NgramLesson = 1
 		m.config.NgramTotal = len(m.ngramLessons)
@@ -310,14 +317,14 @@ func (m Model) finishTest() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Ngram mode: check WPM threshold, advance or retry
+	// Ngram mode: check WPM threshold and correctness, advance or retry.
 	if m.config.Mode == "ngram" {
 		engine := m.typing.engine
 		duration := engine.ElapsedTime()
 		totalChars := engine.TotalTypedChars()
 		wpm := float64(totalChars) / 5.0 / duration.Minutes()
 
-		if math.Round(wpm) >= ngramWPMThreshold {
+		if ngramLessonPassed(engine.Words(), wpm) {
 			m.ngramLessonIdx++
 			if m.ngramLessonIdx < len(m.ngramLessons) {
 				m.config.NgramLesson = m.ngramLessonIdx + 1
@@ -391,11 +398,114 @@ func (m Model) finishTest() (Model, tea.Cmd) {
 	m.typing = nil
 	m.screen = ScreenResults
 
-	// Fire async LLM spellcheck
-	spellcheckCmd := func() tea.Msg {
-		res, err := llm.Spellcheck(typedWords)
-		return spellcheckMsg{result: res, err: err}
-	}
+	spellcheckCmd := spellcheckAndLogCmd(m.llmLog, m.config, result, typedWords, targetWords)
 
 	return m, spellcheckCmd
+}
+
+func spellcheckAndLogCmd(store *llmlog.Store, config TestConfig, result stats.TestResult, typedWords, targetWords []string) tea.Cmd {
+	return func() tea.Msg {
+		requestInfo := llm.SpellcheckRequestInfo(typedWords)
+		started := time.Now()
+		res, err := llm.Spellcheck(typedWords)
+		latency := time.Since(started)
+
+		logErr := saveLLMCall(store, llmLogInput{
+			started:     started,
+			latency:     latency,
+			requestInfo: requestInfo,
+			config:      config,
+			result:      result,
+			typedWords:  typedWords,
+			targetWords: targetWords,
+			llmResult:   res,
+			llmErr:      err,
+		})
+
+		return spellcheckMsg{result: res, err: err, logErr: logErr}
+	}
+}
+
+type llmLogInput struct {
+	started     time.Time
+	latency     time.Duration
+	requestInfo llm.RequestInfo
+	config      TestConfig
+	result      stats.TestResult
+	typedWords  []string
+	targetWords []string
+	llmResult   *llm.Result
+	llmErr      error
+}
+
+func saveLLMCall(store *llmlog.Store, input llmLogInput) error {
+	var correctedWords []string
+	rawCorrected := ""
+	wordCountMismatch := false
+	responseID := ""
+	responseModel := ""
+	promptTokens := 0
+	completionTokens := 0
+	totalTokens := 0
+	if input.llmResult != nil {
+		correctedWords = input.llmResult.CorrectedWords
+		rawCorrected = input.llmResult.RawCorrectedText
+		wordCountMismatch = input.llmResult.WordCountMismatch
+		responseID = input.llmResult.ResponseID
+		responseModel = input.llmResult.ResponseModel
+		promptTokens = input.llmResult.PromptTokens
+		completionTokens = input.llmResult.CompletionTokens
+		totalTokens = input.llmResult.TotalTokens
+	}
+
+	record, err := llmlog.NewRecord(llmlog.RecordInput{
+		CreatedAt:        input.started,
+		Request:          input.requestInfo,
+		ResponseID:       responseID,
+		ResponseModel:    responseModel,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      totalTokens,
+		Test: llmlog.TestContext{
+			Mode:         input.config.Mode,
+			ModeValue:    input.config.Value,
+			WordList:     input.config.WordList,
+			NgramType:    "",
+			NgramScope:   input.config.Scope,
+			NgramLesson:  input.config.NgramLesson,
+			NgramTotal:   input.config.NgramTotal,
+			DurationSecs: input.result.Duration.Seconds(),
+			WPM:          input.result.WPM,
+			RawWPM:       input.result.RawWPM,
+			CorrectedWPM: input.result.CorrectedWPM,
+			Accuracy:     input.result.Accuracy,
+			Consistency:  input.result.Consistency,
+		},
+		TargetWords:       input.targetWords,
+		TypedWords:        input.typedWords,
+		CorrectedWords:    correctedWords,
+		RawCorrectedText:  rawCorrected,
+		WordCountMismatch: wordCountMismatch,
+		Latency:           input.latency,
+		Err:               input.llmErr,
+	})
+	if err != nil {
+		return err
+	}
+	return store.Save(record)
+}
+
+func ngramLessonPassed(words []typing.WordState, wpm float64) bool {
+	if wpm < ngramWPMThreshold {
+		return false
+	}
+	if len(words) == 0 {
+		return false
+	}
+	for _, word := range words {
+		if !word.Done || !word.Correct {
+			return false
+		}
+	}
+	return true
 }

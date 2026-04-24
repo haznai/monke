@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/hazn/monkeytype-tui/internal/appdir"
 )
 
 type Correction struct {
@@ -20,17 +21,36 @@ type Correction struct {
 }
 
 type Result struct {
-	CorrectedWords []string
-	Corrections    []Correction
+	CorrectedWords    []string
+	Corrections       []Correction
+	RawCorrectedText  string
+	WordCountMismatch bool
+	ResponseID        string
+	ResponseModel     string
+	PromptTokens      int
+	CompletionTokens  int
+	TotalTokens       int
+}
+
+type RequestInfo struct {
+	Provider            string
+	BaseURL             string
+	Model               string
+	SystemPrompt        string
+	UserPrompt          string
+	Temperature         float64
+	TopP                float64
+	MaxCompletionTokens int
+	ReasoningEffort     string
 }
 
 type chatRequest struct {
-	Model              string        `json:"model"`
-	Messages           []chatMessage `json:"messages"`
-	Temperature        float64       `json:"temperature"`
-	TopP               float64       `json:"top_p"`
-	MaxCompletionToks  int           `json:"max_completion_tokens"`
-	ReasoningEffort    string        `json:"reasoning_effort"`
+	Model             string        `json:"model"`
+	Messages          []chatMessage `json:"messages"`
+	Temperature       float64       `json:"temperature"`
+	TopP              float64       `json:"top_p"`
+	MaxCompletionToks int           `json:"max_completion_tokens"`
+	ReasoningEffort   string        `json:"reasoning_effort"`
 }
 
 type chatMessage struct {
@@ -39,11 +59,20 @@ type chatMessage struct {
 }
 
 type chatResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage tokenUsage `json:"usage"`
+}
+
+type tokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 type errorResponse struct {
@@ -56,10 +85,12 @@ type errorResponse struct {
 var embeddedAPIKey string
 
 const (
-	systemPrompt        = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
-	defaultURL          = "https://api.groq.com/openai/v1/chat/completions"
-	modelName           = "openai/gpt-oss-20b"
-	maxCompletionTokens = 128
+	systemPrompt = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
+	defaultURL   = "https://api.groq.com/openai/v1/chat/completions"
+	modelName    = "openai/gpt-oss-20b"
+	// gpt-oss spends completion budget on hidden reasoning. 128 can return
+	// empty content with finish_reason=length for noisy typo-heavy input.
+	maxCompletionTokens = 512
 )
 
 func loadAPIKey() string {
@@ -67,47 +98,68 @@ func loadAPIKey() string {
 		return key
 	}
 
-	home, err := os.UserHomeDir()
-	if err == nil {
-		f, err := os.Open(filepath.Join(home, ".monkeytype-tui", ".env"))
-		if err == nil {
-			defer f.Close()
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if k, v, ok := strings.Cut(line, "="); ok && k == "GROQ_API_KEY" {
-					return v
-				}
-			}
-		}
+	if key := readAPIKeyFromEnvFile(appdir.EnvPath()); key != "" {
+		return key
 	}
 
 	return embeddedAPIKey
 }
 
+func readAPIKeyFromEnvFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if k, v, ok := strings.Cut(line, "="); ok && k == "GROQ_API_KEY" {
+			return v
+		}
+	}
+	return ""
+}
+
 func Spellcheck(typedWords []string) (*Result, error) {
 	apiKey := loadAPIKey()
 	if apiKey == "" {
-		return nil, fmt.Errorf("GROQ_API_KEY not set (env or ~/.monkeytype-tui/.env)")
+		return nil, fmt.Errorf("GROQ_API_KEY not set (env or %s)", appdir.EnvPath())
 	}
 	return spellcheck(typedWords, apiKey, defaultURL, http.DefaultClient)
+}
+
+func SpellcheckRequestInfo(typedWords []string) RequestInfo {
+	return RequestInfo{
+		Provider:            "groq",
+		BaseURL:             defaultURL,
+		Model:               modelName,
+		SystemPrompt:        systemPrompt,
+		UserPrompt:          strings.Join(typedWords, " "),
+		Temperature:         0,
+		TopP:                0.2,
+		MaxCompletionTokens: maxCompletionTokens,
+		ReasoningEffort:     "low",
+	}
 }
 
 func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client) (*Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	input := strings.Join(typedWords, " ")
+	requestInfo := SpellcheckRequestInfo(typedWords)
+	requestInfo.BaseURL = baseURL
 
 	reqBody := chatRequest{
-		Model:             modelName,
-		Temperature:       0,
-		TopP:              0.2,
-		MaxCompletionToks: maxCompletionTokens,
-		ReasoningEffort:   "low",
+		Model:             requestInfo.Model,
+		Temperature:       requestInfo.Temperature,
+		TopP:              requestInfo.TopP,
+		MaxCompletionToks: requestInfo.MaxCompletionTokens,
+		ReasoningEffort:   requestInfo.ReasoningEffort,
 		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: input},
+			{Role: "system", Content: requestInfo.SystemPrompt},
+			{Role: "user", Content: requestInfo.UserPrompt},
 		},
 	}
 
@@ -146,11 +198,14 @@ func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client
 		return nil, fmt.Errorf("no choices in response")
 	}
 
-	corrected := strings.TrimSpace(chatResp.Choices[0].Message.Content)
-	correctedWords := strings.Fields(corrected)
+	rawCorrected := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	correctedWords := strings.Fields(rawCorrected)
+	wordCountMismatch := len(correctedWords) != len(typedWords)
 
-	// Safety valve: if word count doesn't match, return original unchanged
-	if len(correctedWords) != len(typedWords) {
+	// The model sometimes splits or inserts words despite the prompt. That output
+	// cannot be safely aligned word-by-word, so ignore it instead of turning a
+	// completed typing test into an LLM error screen.
+	if wordCountMismatch {
 		correctedWords = make([]string, len(typedWords))
 		copy(correctedWords, typedWords)
 	}
@@ -167,7 +222,14 @@ func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client
 	}
 
 	return &Result{
-		CorrectedWords: correctedWords,
-		Corrections:    corrections,
+		CorrectedWords:    correctedWords,
+		Corrections:       corrections,
+		RawCorrectedText:  rawCorrected,
+		WordCountMismatch: wordCountMismatch,
+		ResponseID:        chatResp.ID,
+		ResponseModel:     chatResp.Model,
+		PromptTokens:      chatResp.Usage.PromptTokens,
+		CompletionTokens:  chatResp.Usage.CompletionTokens,
+		TotalTokens:       chatResp.Usage.TotalTokens,
 	}, nil
 }

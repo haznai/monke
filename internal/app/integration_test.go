@@ -1,11 +1,15 @@
 package app
 
 import (
+	"database/sql"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/hazn/monkeytype-tui/internal/history"
+	"github.com/hazn/monkeytype-tui/internal/llm"
+	"github.com/hazn/monkeytype-tui/internal/llmlog"
 	"github.com/hazn/monkeytype-tui/internal/stats"
 	"github.com/hazn/monkeytype-tui/internal/typing"
 )
@@ -223,7 +227,7 @@ func TestFullTypingFlow_BackspaceCorrection(t *testing.T) {
 	engine.TypeChar('c')
 	engine.TypeChar('o')
 	engine.TypeChar('x') // mistake
-	engine.Backspace()    // fix it
+	engine.Backspace()   // fix it
 	engine.TypeChar('d')
 	engine.TypeChar('e')
 	engine.Space()
@@ -278,4 +282,197 @@ func TestFullTypingFlow_ResetAndRetype(t *testing.T) {
 	if !ws[0].Correct || !ws[1].Correct {
 		t.Error("both words should be correct after reset and retype")
 	}
+}
+
+func TestSaveLLMCallWritesTargetTypedCorrectedAndMetrics(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "llm-calls.sqlite3")
+	store := llmlog.NewStore(path)
+	result := stats.TestResult{
+		WPM:          20,
+		RawWPM:       40,
+		CorrectedWPM: 60,
+		Accuracy:     50,
+		Consistency:  90,
+		Duration:     6 * time.Second,
+	}
+
+	err := saveLLMCall(store, llmLogInput{
+		started: time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC),
+		latency: 75 * time.Millisecond,
+		requestInfo: llm.RequestInfo{
+			Provider:            "groq",
+			BaseURL:             "https://example.test/chat",
+			Model:               "test-model",
+			SystemPrompt:        "fix it",
+			UserPrompt:          "teh quick fxo",
+			Temperature:         0,
+			TopP:                0.2,
+			MaxCompletionTokens: 512,
+			ReasoningEffort:     "low",
+		},
+		config: TestConfig{
+			Mode:     "words",
+			Value:    25,
+			WordList: "english_1k",
+		},
+		result:      result,
+		targetWords: []string{"the", "quick", "fox"},
+		typedWords:  []string{"teh", "quick", "fxo"},
+		llmResult: &llm.Result{
+			CorrectedWords:   []string{"the", "quick", "far"},
+			RawCorrectedText: "the quick far",
+			ResponseID:       "chatcmpl-test",
+			ResponseModel:    "served-model",
+			PromptTokens:     42,
+			CompletionTokens: 9,
+			TotalTokens:      51,
+		},
+	})
+	if err != nil {
+		t.Fatalf("saveLLMCall: %v", err)
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	var targetText, typedText, correctedText, model, prompt, responseID string
+	var fixed, stillWrong, correctAfterLLM, totalTokens int
+	var wpm, rawWPM, correctedWPM, llmWPM float64
+	err = db.QueryRow(`
+SELECT target_text, typed_text, corrected_text, model, system_prompt, response_id, total_tokens,
+	llm_fixed_count, still_wrong_count, correct_after_llm_count,
+	wpm, raw_wpm, corrected_wpm, llm_wpm
+FROM llm_calls
+`).Scan(&targetText, &typedText, &correctedText, &model, &prompt, &responseID, &totalTokens, &fixed, &stillWrong, &correctAfterLLM, &wpm, &rawWPM, &correctedWPM, &llmWPM)
+	if err != nil {
+		t.Fatalf("query llm_calls: %v", err)
+	}
+	if targetText != "the quick fox" || typedText != "teh quick fxo" || correctedText != "the quick far" {
+		t.Fatalf("texts target=%q typed=%q corrected=%q", targetText, typedText, correctedText)
+	}
+	if model != "test-model" || prompt != "fix it" {
+		t.Fatalf("request metadata model=%q prompt=%q", model, prompt)
+	}
+	if responseID != "chatcmpl-test" || totalTokens != 51 {
+		t.Fatalf("response metadata responseID=%q totalTokens=%d", responseID, totalTokens)
+	}
+	if fixed != 1 || stillWrong != 1 || correctAfterLLM != 2 {
+		t.Fatalf("counts fixed=%d stillWrong=%d correctAfterLLM=%d, want 1/1/2", fixed, stillWrong, correctAfterLLM)
+	}
+	if wpm != 20 || rawWPM != 40 || correctedWPM != 60 {
+		t.Fatalf("typing WPMs = %.1f/%.1f/%.1f, want 20/40/60", wpm, rawWPM, correctedWPM)
+	}
+	if !approxFloat(llmWPM, 20) {
+		t.Fatalf("llmWPM = %.2f, want 20", llmWPM)
+	}
+}
+
+func TestNgramLessonRequires100WPMAndEveryWordCorrect(t *testing.T) {
+	correctWords := []typing.WordState{
+		{Target: "th", Typed: "th", Done: true, Correct: true},
+		{Target: "he", Typed: "he", Done: true, Correct: true},
+	}
+	wrongWords := []typing.WordState{
+		{Target: "th", Typed: "zz", Done: true, Correct: false},
+		{Target: "he", Typed: "he", Done: true, Correct: true},
+	}
+	notDoneWords := []typing.WordState{
+		{Target: "th", Typed: "th", Done: true, Correct: true},
+		{Target: "he", Typed: "he", Done: false, Correct: true},
+	}
+
+	tests := []struct {
+		name  string
+		words []typing.WordState
+		wpm   float64
+		want  bool
+	}{
+		{name: "100 wpm and every word correct advances", words: correctWords, wpm: 100, want: true},
+		{name: "99.9 wpm retries instead of rounding up", words: correctWords, wpm: 99.9, want: false},
+		{name: "incorrect word retries even far above threshold", words: wrongWords, wpm: 200, want: false},
+		{name: "unfinished word retries even if marked correct", words: notDoneWords, wpm: 200, want: false},
+		{name: "empty lesson never passes", words: nil, wpm: 200, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ngramLessonPassed(tt.words, tt.wpm)
+			if got != tt.want {
+				t.Fatalf("ngramLessonPassed() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNgramLessonRetriesWhenAnyWordIsIncorrect(t *testing.T) {
+	lessons := [][]string{
+		{"th", "he"},
+		{"in", "er"},
+	}
+	config := TestConfig{
+		Mode:        "ngram",
+		NgramLesson: 1,
+		NgramTotal:  len(lessons),
+	}
+	typingModel := NewTypingModel(lessons[0], config, 80, 24)
+
+	for _, ch := range "zz" {
+		typingModel.engine.TypeChar(ch)
+	}
+	typingModel.engine.Space()
+	for _, ch := range "he" {
+		typingModel.engine.TypeChar(ch)
+	}
+
+	if !typingModel.engine.IsFinished() {
+		t.Fatal("ngram attempt should be finished")
+	}
+	duration := typingModel.engine.ElapsedTime()
+	wpm := float64(typingModel.engine.TotalTypedChars()) / 5.0 / duration.Minutes()
+	if wpm < ngramWPMThreshold {
+		t.Fatalf("test setup error: attempt WPM %.1f is below threshold, so retry would not prove the correctness gate", wpm)
+	}
+
+	words := typingModel.engine.Words()
+	if words[0].Correct {
+		t.Fatal("test setup error: first ngram word should be incorrect")
+	}
+	if !words[1].Correct {
+		t.Fatal("test setup error: second ngram word should be correct")
+	}
+
+	m := Model{
+		config:         config,
+		typing:         &typingModel,
+		ngramLessons:   lessons,
+		ngramLessonIdx: 0,
+	}
+
+	updated, _ := m.finishTest()
+
+	if updated.ngramLessonIdx != 0 {
+		t.Fatalf("ngram lesson index = %d, want 0 to retry the failed lesson", updated.ngramLessonIdx)
+	}
+	if updated.config.NgramLesson != 1 {
+		t.Fatalf("ngram lesson display = %d, want 1 to retry the failed lesson", updated.config.NgramLesson)
+	}
+	if updated.typing == nil {
+		t.Fatal("typing model should be reset for retry")
+	}
+	retryWords := updated.typing.engine.Words()
+	if len(retryWords) != len(lessons[0]) {
+		t.Fatalf("retry lesson word count = %d, want %d", len(retryWords), len(lessons[0]))
+	}
+	for i, word := range retryWords {
+		if word.Target != lessons[0][i] {
+			t.Fatalf("retry word %d target = %q, want %q", i, word.Target, lessons[0][i])
+		}
+	}
+}
+
+func approxFloat(got, want float64) bool {
+	return math.Abs(got-want) < 0.0001
 }

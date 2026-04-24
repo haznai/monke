@@ -203,3 +203,26 @@ func TestResultsView_ShowsLLMErrorDetails(t *testing.T) {
 		t.Fatalf("view should include LLM error details, got %q", view)
 	}
 }
+
+func TestResultsView_ShowsLLMLogErrorWithoutDroppingSpellcheckResult(t *testing.T) {
+	m := makeResultsModel(
+		[]string{"the", "quick"},
+		[]string{"teh", "quick"},
+		[]string{"the", "quick"},
+	)
+	m.llmLogErr = errors.New("insert llm call: disk full")
+
+	view := m.View()
+	if strings.Contains(view, "llm error:") {
+		t.Fatalf("view should not turn a logging failure into an LLM failure, got %q", view)
+	}
+	if !strings.Contains(view, "llm log error:") {
+		t.Fatalf("view should mention log error, got %q", view)
+	}
+	if !strings.Contains(view, "insert llm call: disk full") {
+		t.Fatalf("view should include log error details, got %q", view)
+	}
+	if !strings.Contains(view, "wpm") {
+		t.Fatalf("view should still render spellcheck results, got %q", view)
+	}
+}

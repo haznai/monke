@@ -1,0 +1,87 @@
+package menu
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestNew_DefaultSelectionIsShortQuote(t *testing.T) {
+	cmd := New().select_()
+	msg := cmd()
+	selectMsg, ok := msg.(SelectMsg)
+	if !ok {
+		t.Fatalf("message type = %T, want SelectMsg", msg)
+	}
+
+	if selectMsg.Mode != "quote" {
+		t.Fatalf("mode = %q, want quote", selectMsg.Mode)
+	}
+	if selectMsg.Value != 0 {
+		t.Fatalf("quote value = %d, want 0 (short)", selectMsg.Value)
+	}
+}
+
+func TestMenuOnlyOffersQuoteAndNgramModes(t *testing.T) {
+	view := New().View()
+
+	for _, want := range []string{"quote", "ngram"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("menu view missing mode %q:\n%s", want, view)
+		}
+	}
+	for _, removed := range []string{"time", "words"} {
+		if strings.Contains(view, removed) {
+			t.Fatalf("menu view still contains removed mode %q:\n%s", removed, view)
+		}
+	}
+}
+
+func TestNgramSelectionUsesScopeAsTheOnlyValue(t *testing.T) {
+	m := New()
+	m.moveRight() // quote -> ngram
+
+	cmd := m.select_()
+	msg := cmd()
+	selectMsg, ok := msg.(SelectMsg)
+	if !ok {
+		t.Fatalf("message type = %T, want SelectMsg", msg)
+	}
+
+	if selectMsg.Mode != "ngram" {
+		t.Fatalf("mode = %q, want ngram", selectMsg.Mode)
+	}
+	if selectMsg.Value != 50 {
+		t.Fatalf("value = %d, want 50", selectMsg.Value)
+	}
+	if selectMsg.Scope != 50 {
+		t.Fatalf("scope = %d, want 50", selectMsg.Scope)
+	}
+}
+
+func TestNgramMenuShowsScopeValuesWithoutAHeaderOrTypeChoice(t *testing.T) {
+	m := New()
+	m.moveRight() // quote -> ngram
+	view := m.View()
+
+	for _, want := range []string{"top 50", "top 100", "top 150", "top 200"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("ngram menu missing %q:\n%s", want, view)
+		}
+	}
+	for _, removed := range []string{"scope", "bigrams", "trigrams"} {
+		if strings.Contains(view, removed) {
+			t.Fatalf("ngram menu still contains removed text %q:\n%s", removed, view)
+		}
+	}
+}
+
+func TestMenuDoesNotNavigatePastTheValueRow(t *testing.T) {
+	m := New()
+	m.moveRight() // quote -> ngram
+	m.moveDown()
+	m.moveDown()
+
+	if m.section != SectionValue {
+		t.Fatalf("section = %d, want SectionValue", m.section)
+	}
+}

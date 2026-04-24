@@ -4,6 +4,15 @@ monkeytype-tui
 # Cached datasets (fetched at runtime)
 datasets/
 
+# Local LLM call logs
+.monkeytype-tui/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+
 # OS
 .DS_Store
 

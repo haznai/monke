@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -36,6 +37,8 @@ func fakeServer(t *testing.T, wantResponse string, validate func(t *testing.T, r
 		}
 
 		resp := chatResponse{
+			ID:    "chatcmpl-test",
+			Model: req.Model,
 			Choices: []struct {
 				Message struct {
 					Content string `json:"content"`
@@ -44,6 +47,11 @@ func fakeServer(t *testing.T, wantResponse string, validate func(t *testing.T, r
 				{Message: struct {
 					Content string `json:"content"`
 				}{Content: wantResponse}},
+			},
+			Usage: tokenUsage{
+				PromptTokens:     12,
+				CompletionTokens: 3,
+				TotalTokens:      15,
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -62,8 +70,8 @@ func TestSpellcheck_SendsCorrectRequest(t *testing.T) {
 		if req.TopP != 0.2 {
 			t.Errorf("top_p = %f, want 0.2", req.TopP)
 		}
-		if req.MaxCompletionToks != 128 {
-			t.Errorf("max_completion_tokens = %d, want 128", req.MaxCompletionToks)
+		if req.MaxCompletionToks != 512 {
+			t.Errorf("max_completion_tokens = %d, want 512", req.MaxCompletionToks)
 		}
 		if req.ReasoningEffort != "low" {
 			t.Errorf("reasoning_effort = %q, want low", req.ReasoningEffort)
@@ -93,6 +101,47 @@ func TestSpellcheck_SendsCorrectRequest(t *testing.T) {
 	if len(result.CorrectedWords) != 3 {
 		t.Fatalf("corrected words len = %d, want 3", len(result.CorrectedWords))
 	}
+	if result.RawCorrectedText != "the quick fox" {
+		t.Fatalf("raw corrected text = %q, want %q", result.RawCorrectedText, "the quick fox")
+	}
+	if result.WordCountMismatch {
+		t.Fatal("word count mismatch should be false")
+	}
+	if result.ResponseID != "chatcmpl-test" {
+		t.Fatalf("response ID = %q, want chatcmpl-test", result.ResponseID)
+	}
+	if result.ResponseModel != modelName {
+		t.Fatalf("response model = %q, want %q", result.ResponseModel, modelName)
+	}
+	if result.PromptTokens != 12 || result.CompletionTokens != 3 || result.TotalTokens != 15 {
+		t.Fatalf("usage = %d/%d/%d, want 12/3/15", result.PromptTokens, result.CompletionTokens, result.TotalTokens)
+	}
+}
+
+func TestSpellcheckRequestInfo(t *testing.T) {
+	info := SpellcheckRequestInfo([]string{"teh", "quick", "fox"})
+
+	if info.Provider != "groq" {
+		t.Fatalf("provider = %q, want groq", info.Provider)
+	}
+	if info.BaseURL != defaultURL {
+		t.Fatalf("base URL = %q, want %q", info.BaseURL, defaultURL)
+	}
+	if info.Model != modelName {
+		t.Fatalf("model = %q, want %q", info.Model, modelName)
+	}
+	if info.SystemPrompt != systemPrompt {
+		t.Fatal("system prompt mismatch")
+	}
+	if info.UserPrompt != "teh quick fox" {
+		t.Fatalf("user prompt = %q, want typed words joined", info.UserPrompt)
+	}
+	if info.MaxCompletionTokens != maxCompletionTokens {
+		t.Fatalf("max completion tokens = %d, want %d", info.MaxCompletionTokens, maxCompletionTokens)
+	}
+	if info.ReasoningEffort != "low" {
+		t.Fatalf("reasoning effort = %q, want low", info.ReasoningEffort)
+	}
 }
 
 func TestSpellcheck_FixesTypos(t *testing.T) {
@@ -112,6 +161,12 @@ func TestSpellcheck_FixesTypos(t *testing.T) {
 	}
 	if result.Corrections[1].Original != "quikc" || result.Corrections[1].Fixed != "quick" {
 		t.Errorf("correction[1] = %v, want quikc->quick", result.Corrections[1])
+	}
+	if result.RawCorrectedText != "the quick brown fox" {
+		t.Errorf("raw corrected text = %q", result.RawCorrectedText)
+	}
+	if result.WordCountMismatch {
+		t.Error("word count mismatch should be false")
 	}
 }
 
@@ -133,7 +188,8 @@ func TestSpellcheck_NoChangesNeeded(t *testing.T) {
 }
 
 func TestSpellcheck_WordCountMismatchFallback(t *testing.T) {
-	// LLM returns different word count: safety valve should return original
+	// The LLM sometimes changes word count despite the prompt. That cannot be
+	// aligned safely, but it also should not surface as a scary runtime error.
 	srv := fakeServer(t, "the quick brown fox jumps", nil)
 	defer srv.Close()
 
@@ -145,12 +201,17 @@ func TestSpellcheck_WordCountMismatchFallback(t *testing.T) {
 	if len(result.CorrectedWords) != 3 {
 		t.Fatalf("corrected words len = %d, want 3", len(result.CorrectedWords))
 	}
-	// Should fall back to original typed words
-	if result.CorrectedWords[0] != "teh" {
-		t.Errorf("corrected[0] = %q, want teh (original)", result.CorrectedWords[0])
+	if result.CorrectedWords[0] != "teh" || result.CorrectedWords[1] != "quikc" || result.CorrectedWords[2] != "fox" {
+		t.Errorf("corrected = %v, want original typed words", result.CorrectedWords)
 	}
 	if len(result.Corrections) != 0 {
-		t.Errorf("corrections len = %d, want 0 (fallback = no corrections)", len(result.Corrections))
+		t.Errorf("corrections len = %d, want 0", len(result.Corrections))
+	}
+	if result.RawCorrectedText != "the quick brown fox jumps" {
+		t.Errorf("raw corrected text = %q", result.RawCorrectedText)
+	}
+	if !result.WordCountMismatch {
+		t.Error("word count mismatch should be true")
 	}
 }
 
@@ -220,9 +281,25 @@ func TestSpellcheck_SingleWord(t *testing.T) {
 	}
 }
 
+func TestLoadAPIKeyReadsAppDirEnvFile(t *testing.T) {
+	t.Setenv("GROQ_API_KEY", "")
+	root := t.TempDir()
+	t.Setenv("MONKEYTYPE_TUI_HOME", root)
+
+	path := filepath.Join(root, ".env")
+	if err := os.WriteFile(path, []byte("GROQ_API_KEY=test-from-env-file\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if got := loadAPIKey(); got != "test-from-env-file" {
+		t.Fatalf("loadAPIKey() = %q, want %q", got, "test-from-env-file")
+	}
+}
+
 func TestSpellcheck_MissingAPIKey(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "")
-	t.Setenv("HOME", t.TempDir()) // prevent .env fallback
+	t.Setenv("MONKEYTYPE_TUI_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir()) // prevent legacy .env fallback
 	_, err := Spellcheck([]string{"test"})
 	if err == nil {
 		t.Fatal("expected error when API key is missing")
@@ -257,5 +334,29 @@ func TestSpellcheck_Integration(t *testing.T) {
 	// Verify word count preserved
 	if len(result.CorrectedWords) != 9 {
 		t.Errorf("corrected word count = %d, want 9", len(result.CorrectedWords))
+	}
+}
+
+func TestSpellcheck_IntegrationNoisyUserText(t *testing.T) {
+	key := os.Getenv("GROQ_API_KEY")
+	if key == "" {
+		t.Skip("GROQ_API_KEY not set, skipping integration test")
+	}
+
+	input := []string{"ichekc", "the", "latst", "sommit,", "teat", "itih", "eht", "embedded", "pai", "key,", "is", "the", "llm", "even", "doing", "something,", "it", "feels", "like", "it", "is", "not", "even", "correcting", "thing"}
+	result, err := spellcheck(input, key, defaultURL, http.DefaultClient)
+	if err != nil {
+		t.Fatalf("spellcheck: %v", err)
+	}
+
+	t.Logf("input:     %v", input)
+	t.Logf("corrected: %v", result.CorrectedWords)
+	t.Logf("corrections: %v", result.Corrections)
+
+	if len(result.CorrectedWords) != len(input) {
+		t.Fatalf("corrected word count = %d, want %d", len(result.CorrectedWords), len(input))
+	}
+	if len(result.Corrections) < 3 {
+		t.Fatalf("corrections len = %d, want at least 3 for noisy user text", len(result.Corrections))
 	}
 }

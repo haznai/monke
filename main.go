@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/hazn/monkeytype-tui/internal/app"
+	"github.com/hazn/monkeytype-tui/internal/appdir"
 	"github.com/hazn/monkeytype-tui/internal/dataset"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,8 +30,7 @@ func main() {
 }
 
 func fetchDatasets() {
-	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, ".monkeytype-tui", "datasets")
+	dataDir := appdir.DatasetDir()
 
 	fmt.Println("Fetching datasets from MonkeyType GitHub...")
 	if err := dataset.FetchAndCache(dataDir); err != nil {
