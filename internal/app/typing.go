@@ -198,8 +198,9 @@ func (m TypingModel) View() string {
 	b.WriteString(footer)
 
 	return lipgloss.NewStyle().
-		Padding(1, 2).
-		Width(min(m.width, 80)).
+		Padding(theme.ScreenVerticalPadding, theme.ScreenHorizontalPadding).
+		Width(min(m.width, theme.ScreenWidth)).
+		Height(theme.ScreenHeight).
 		Render(b.String())
 }
 
@@ -211,7 +212,7 @@ func (m TypingModel) renderHeader() string {
 	}
 
 	right := theme.Subtitle.Render(rightText)
-	gap := max(0, min(m.width, 80)-10-lipgloss.Width(left)-lipgloss.Width(right))
+	gap := max(0, min(m.width, theme.ScreenWidth)-10-lipgloss.Width(left)-lipgloss.Width(right))
 	return left + strings.Repeat(" ", gap) + right
 }
 
@@ -232,7 +233,7 @@ func (m TypingModel) renderWords() string {
 	words := m.engine.Words()
 	currentIdx := m.engine.CurrentWordIndex()
 	currentInput := m.engine.CurrentInput()
-	maxWidth := min(m.width, 80) - 10
+	maxWidth := min(m.width, theme.ScreenWidth) - 10
 
 	var lines []string
 	var currentLine strings.Builder

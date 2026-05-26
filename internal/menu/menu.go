@@ -177,7 +177,8 @@ func (m Model) select_() tea.Cmd {
 	return func() tea.Msg { return msg }
 }
 
-const menuWidth = 80
+const menuWidth = theme.ScreenWidth
+const menuHeight = theme.ScreenHeight
 
 func (m Model) View() string {
 	var b strings.Builder
@@ -212,8 +213,9 @@ func (m Model) View() string {
 	b.WriteString(theme.FooterStyle.Render(footer))
 
 	return lipgloss.NewStyle().
-		Padding(1, 2).
+		Padding(theme.ScreenVerticalPadding, theme.ScreenHorizontalPadding).
 		Width(menuWidth).
+		Height(menuHeight).
 		Render(b.String())
 }
 

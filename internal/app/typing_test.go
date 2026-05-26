@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/hazn/monkeytype-tui/internal/theme"
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -47,5 +49,17 @@ func TestTypingHeaderOmitsRedundantQuoteStatus(t *testing.T) {
 	}
 	if strings.Contains(header, "quote") {
 		t.Fatalf("header still contains redundant quote mode: %q", header)
+	}
+}
+
+func TestTypingViewUsesAnchoredScreenHeight(t *testing.T) {
+	m := NewTypingModel([]string{"short", "quote"}, TestConfig{Mode: "quote"}, 80, 24)
+
+	lines := strings.Split(plainText(m.View()), "\n")
+	if len(lines) != theme.ScreenHeight {
+		t.Fatalf("typing view height = %d, want %d", len(lines), theme.ScreenHeight)
+	}
+	if !strings.HasPrefix(lines[1], "  monke") {
+		t.Fatalf("typing title padding = %q, want anchored title line", lines[1])
 	}
 }

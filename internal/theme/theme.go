@@ -2,6 +2,13 @@ package theme
 
 import "github.com/charmbracelet/lipgloss"
 
+const (
+	ScreenWidth             = 80
+	ScreenHeight            = 10
+	ScreenVerticalPadding   = 1
+	ScreenHorizontalPadding = 2
+)
+
 // MonkeyType-inspired dark theme
 var (
 	// Base colors

@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/hazn/monkeytype-tui/internal/theme"
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -48,6 +50,9 @@ func TestMenuUsesTypingFrameWidthAndPadding(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("menu view has too few lines: %q", view)
+	}
+	if len(lines) != theme.ScreenHeight {
+		t.Fatalf("menu view height = %d, want %d", len(lines), theme.ScreenHeight)
 	}
 	if strings.TrimSpace(lines[0]) != "" {
 		t.Fatalf("menu should start with one padded blank line, got %q", lines[0])

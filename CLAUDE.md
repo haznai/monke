@@ -81,6 +81,7 @@ Inspired by [ngram-type](https://github.com/ranelpadon/ngram-type). Drills the m
 - Lesson generation: shuffle the scoped pool, pair into chunks of 2, repeat each chunk 3 times (e.g. "th he th he th he")
 - Progression: must hit 100 WPM on a lesson AND type every word correctly to advance. Fail = retype same lesson. Pass = next lesson.
 - Header shows compact progress (`5/25  top 50`), last attempt WPM shown in footer
+- Menu and typing screens share the same 80x10 frame and 1x2 padding so `monke` stays anchored between screens.
 
 ## Typing Mechanics
 
