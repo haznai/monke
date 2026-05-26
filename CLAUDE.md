@@ -29,10 +29,15 @@ This counts every target character you attempted (even if you mistyped it) divid
 go run .              # launch the TUI
 go run . fetch        # re-fetch datasets from MonkeyType GitHub
 go test ./... -v      # run all tests
-go build -o monkeytype-tui .
+go build -o monke .
 ```
 
 Use `go` (whatever is on PATH), not a hardcoded binary path.
+
+## VCS
+
+- Use `jj` only.
+- The project bookmark is always `main`. Do not create or push feature bookmarks. Move `main` to the finished commit and push with `jj git push --bookmark main`.
 
 ## Architecture
 
@@ -75,7 +80,7 @@ Inspired by [ngram-type](https://github.com/ranelpadon/ngram-type). Drills the m
 - Scope: top 50 / 100 / 150 / 200 from the frequency list
 - Lesson generation: shuffle the scoped pool, pair into chunks of 2, repeat each chunk 3 times (e.g. "th he th he th he")
 - Progression: must hit 100 WPM on a lesson AND type every word correctly to advance. Fail = retype same lesson. Pass = next lesson.
-- Lesson counter shown in header ("lesson 5/25"), last attempt WPM shown in footer
+- Header shows compact progress (`5/25  top 50`), last attempt WPM shown in footer
 
 ## Typing Mechanics
 

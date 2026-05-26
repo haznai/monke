@@ -164,7 +164,7 @@ func (m Model) View() string {
 			content = theme.FailedText.Render("Error: "+m.err) + "\n\n" +
 				theme.DimText.Render("Press ctrl+c to quit")
 		} else {
-			content = theme.Title.Render("monkeytype-tui") + "\n\n" +
+			content = theme.Title.Render("monke") + "\n\n" +
 				theme.DimText.Render("loading datasets...")
 		}
 	case ScreenMenu:

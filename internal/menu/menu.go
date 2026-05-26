@@ -177,13 +177,13 @@ func (m Model) select_() tea.Cmd {
 	return func() tea.Msg { return msg }
 }
 
-const menuWidth = 60
+const menuWidth = 80
 
 func (m Model) View() string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(theme.Title.Render("monkeytype-tui"))
+	b.WriteString(theme.Title.Render("monke"))
 	b.WriteString("\n\n")
 
 	// Mode
@@ -212,7 +212,7 @@ func (m Model) View() string {
 	b.WriteString(theme.FooterStyle.Render(footer))
 
 	return lipgloss.NewStyle().
-		Padding(2, 4).
+		Padding(1, 2).
 		Width(menuWidth).
 		Render(b.String())
 }

@@ -204,23 +204,28 @@ func (m TypingModel) View() string {
 }
 
 func (m TypingModel) renderHeader() string {
-	left := theme.Title.Render("monkeytype-tui")
-
-	var right string
-	switch m.config.Mode {
-	case "words":
-		right = theme.Subtitle.Render(fmt.Sprintf("words %d  %s", m.config.Value, m.config.WordList))
-	case "time":
-		right = theme.Subtitle.Render(fmt.Sprintf("time %ds  %s", m.config.Value, m.config.WordList))
-	case "quote":
-		right = theme.Subtitle.Render("quote")
-	case "ngram":
-		right = theme.Subtitle.Render(fmt.Sprintf("lesson %d/%d  top %d",
-			m.config.NgramLesson, m.config.NgramTotal, m.config.Scope))
+	left := theme.Title.Render("monke")
+	rightText := m.headerStatus()
+	if rightText == "" {
+		return left
 	}
 
+	right := theme.Subtitle.Render(rightText)
 	gap := max(0, min(m.width, 80)-10-lipgloss.Width(left)-lipgloss.Width(right))
 	return left + strings.Repeat(" ", gap) + right
+}
+
+func (m TypingModel) headerStatus() string {
+	switch m.config.Mode {
+	case "words":
+		return fmt.Sprintf("%d  %s", m.config.Value, m.config.WordList)
+	case "time":
+		return fmt.Sprintf("%ds  %s", m.config.Value, m.config.WordList)
+	case "ngram":
+		return fmt.Sprintf("%d/%d  top %d", m.config.NgramLesson, m.config.NgramTotal, m.config.Scope)
+	default:
+		return ""
+	}
 }
 
 func (m TypingModel) renderWords() string {

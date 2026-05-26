@@ -1,9 +1,16 @@
 package menu
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func plainText(s string) string {
+	return ansiEscapePattern.ReplaceAllString(s, "")
+}
 
 func TestNew_DefaultSelectionIsShortQuote(t *testing.T) {
 	cmd := New().select_()
@@ -33,6 +40,28 @@ func TestMenuOnlyOffersQuoteAndNgramModes(t *testing.T) {
 		if strings.Contains(view, removed) {
 			t.Fatalf("menu view still contains removed mode %q:\n%s", removed, view)
 		}
+	}
+}
+
+func TestMenuUsesTypingFrameWidthAndPadding(t *testing.T) {
+	view := plainText(New().View())
+	lines := strings.Split(view, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("menu view has too few lines: %q", view)
+	}
+	if strings.TrimSpace(lines[0]) != "" {
+		t.Fatalf("menu should start with one padded blank line, got %q", lines[0])
+	}
+
+	titleLine := lines[1]
+	if !strings.HasPrefix(titleLine, "  monke") {
+		t.Fatalf("menu title padding = %q, want same left padding as typing view", titleLine)
+	}
+	if len(titleLine) != menuWidth {
+		t.Fatalf("menu title line width = %d, want %d", len(titleLine), menuWidth)
+	}
+	if strings.Contains(titleLine, "monkeytype-tui") {
+		t.Fatalf("menu title still uses old app name: %q", titleLine)
 	}
 }
 
