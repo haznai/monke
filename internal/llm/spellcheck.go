@@ -85,7 +85,7 @@ type errorResponse struct {
 var embeddedAPIKey string
 
 const (
-	systemPrompt = "You are a spellchecker. Fix spelling errors in the text below. Output ONLY the corrected text, nothing else. Do not change capitalization, punctuation, or word count. Do not add or remove words."
+	systemPrompt = "Correct this fast typing-test input. Treat each whitespace-separated input token as one output token: for every input token, output exactly one corrected token in the same position. Fix typos, missing apostrophes, punctuation, and capitalization when obvious. If unsure, leave the token unchanged. Output only the corrected text."
 	defaultURL   = "https://api.groq.com/openai/v1/chat/completions"
 	modelName    = "openai/gpt-oss-20b"
 	// gpt-oss spends completion budget on hidden reasoning. 128 can return
