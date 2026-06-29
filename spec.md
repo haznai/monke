@@ -128,7 +128,7 @@ This is the number that matters for the "type fast + LLM cleanup" workflow.
 ### LLM Spellcheck
 
 - After test completion, send typed text to OpenRouter for correction
-- Default model: `nvidia/llama-3.3-nemotron-super-49b-v1.5`
+- Default model: `meta-llama/llama-3.2-3b-instruct`
 - Default provider routing: low latency via `OPENROUTER_PROVIDER_SORT=latency`
 - Required key: `OPENROUTER_API_KEY` in the environment or `~/Library/Application Support/monkeytype-tui/.env`
 - Optional overrides: `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `OPENROUTER_PROVIDER_SORT`

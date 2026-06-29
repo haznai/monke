@@ -93,7 +93,7 @@ const (
 	systemPrompt        = "Correct this fast typing-test input. Treat each whitespace-separated input token as one output token: for every input token, output exactly one corrected token in the same position. Fix typos, missing apostrophes, punctuation, and capitalization when obvious. If unsure, leave the token unchanged. Output only the corrected text."
 	providerName        = "openrouter"
 	defaultURL          = "https://openrouter.ai/api/v1/chat/completions"
-	modelName           = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+	modelName           = "meta-llama/llama-3.2-3b-instruct"
 	defaultProviderSort = "latency"
 
 	apiKeyEnv       = "OPENROUTER_API_KEY"
