@@ -61,8 +61,8 @@ func fakeServer(t *testing.T, wantResponse string, validate func(t *testing.T, r
 
 func TestSpellcheck_SendsCorrectRequest(t *testing.T) {
 	srv := fakeServer(t, "the quick fox", func(t *testing.T, req chatRequest) {
-		if req.Model != "openai/gpt-oss-20b" {
-			t.Errorf("model = %q, want openai/gpt-oss-20b", req.Model)
+		if req.Model != "nvidia/llama-3.3-nemotron-super-49b-v1.5" {
+			t.Errorf("model = %q, want nvidia/llama-3.3-nemotron-super-49b-v1.5", req.Model)
 		}
 		if req.Temperature != 0 {
 			t.Errorf("temperature = %f, want 0", req.Temperature)
@@ -70,11 +70,11 @@ func TestSpellcheck_SendsCorrectRequest(t *testing.T) {
 		if req.TopP != 0.2 {
 			t.Errorf("top_p = %f, want 0.2", req.TopP)
 		}
-		if req.MaxCompletionToks != 512 {
-			t.Errorf("max_completion_tokens = %d, want 512", req.MaxCompletionToks)
+		if req.MaxTokens != 512 {
+			t.Errorf("max_tokens = %d, want 512", req.MaxTokens)
 		}
-		if req.ReasoningEffort != "low" {
-			t.Errorf("reasoning_effort = %q, want low", req.ReasoningEffort)
+		if req.Provider == nil || req.Provider.Sort != "latency" {
+			t.Errorf("provider = %#v, want latency sort", req.Provider)
 		}
 		if len(req.Messages) != 2 {
 			t.Fatalf("messages len = %d, want 2", len(req.Messages))
@@ -119,10 +119,14 @@ func TestSpellcheck_SendsCorrectRequest(t *testing.T) {
 }
 
 func TestSpellcheckRequestInfo(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENROUTER_BASE_URL", "")
+	t.Setenv("OPENROUTER_MODEL", "")
+	t.Setenv("OPENROUTER_PROVIDER_SORT", "")
 	info := SpellcheckRequestInfo([]string{"teh", "quick", "fox"})
 
-	if info.Provider != "groq" {
-		t.Fatalf("provider = %q, want groq", info.Provider)
+	if info.Provider != "openrouter" {
+		t.Fatalf("provider = %q, want openrouter", info.Provider)
 	}
 	if info.BaseURL != defaultURL {
 		t.Fatalf("base URL = %q, want %q", info.BaseURL, defaultURL)
@@ -139,8 +143,26 @@ func TestSpellcheckRequestInfo(t *testing.T) {
 	if info.MaxCompletionTokens != maxCompletionTokens {
 		t.Fatalf("max completion tokens = %d, want %d", info.MaxCompletionTokens, maxCompletionTokens)
 	}
-	if info.ReasoningEffort != "low" {
-		t.Fatalf("reasoning effort = %q, want low", info.ReasoningEffort)
+	if info.ProviderSort != "latency" {
+		t.Fatalf("provider sort = %q, want latency", info.ProviderSort)
+	}
+}
+
+func TestSpellcheckRequestInfoUsesOpenRouterEnvOverrides(t *testing.T) {
+	t.Setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+	t.Setenv("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite")
+	t.Setenv("OPENROUTER_PROVIDER_SORT", "throughput")
+
+	info := SpellcheckRequestInfo([]string{"helo"})
+
+	if info.BaseURL != "https://openrouter.ai/api/v1/chat/completions" {
+		t.Fatalf("base URL = %q", info.BaseURL)
+	}
+	if info.Model != "google/gemini-2.5-flash-lite" {
+		t.Fatalf("model = %q", info.Model)
+	}
+	if info.ProviderSort != "throughput" {
+		t.Fatalf("provider sort = %q", info.ProviderSort)
 	}
 }
 
@@ -282,12 +304,12 @@ func TestSpellcheck_SingleWord(t *testing.T) {
 }
 
 func TestLoadAPIKeyReadsAppDirEnvFile(t *testing.T) {
-	t.Setenv("GROQ_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
 	root := t.TempDir()
 	t.Setenv("MONKEYTYPE_TUI_HOME", root)
 
 	path := filepath.Join(root, ".env")
-	if err := os.WriteFile(path, []byte("GROQ_API_KEY=test-from-env-file\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("OPENROUTER_API_KEY=test-from-env-file\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -297,7 +319,7 @@ func TestLoadAPIKeyReadsAppDirEnvFile(t *testing.T) {
 }
 
 func TestSpellcheck_MissingAPIKey(t *testing.T) {
-	t.Setenv("GROQ_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
 	t.Setenv("MONKEYTYPE_TUI_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir()) // prevent legacy .env fallback
 	_, err := Spellcheck([]string{"test"})
@@ -306,12 +328,12 @@ func TestSpellcheck_MissingAPIKey(t *testing.T) {
 	}
 }
 
-// Integration test: hits the real Groq API.
-// Only runs when GROQ_API_KEY is set.
+// Integration test: hits the real OpenRouter API.
+// Only runs when OPENROUTER_API_KEY is set.
 func TestSpellcheck_Integration(t *testing.T) {
-	key := os.Getenv("GROQ_API_KEY")
+	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" {
-		t.Skip("GROQ_API_KEY not set, skipping integration test")
+		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
 	}
 
 	result, err := spellcheck(
@@ -338,9 +360,9 @@ func TestSpellcheck_Integration(t *testing.T) {
 }
 
 func TestSpellcheck_IntegrationNoisyUserText(t *testing.T) {
-	key := os.Getenv("GROQ_API_KEY")
+	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" {
-		t.Skip("GROQ_API_KEY not set, skipping integration test")
+		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
 	}
 
 	input := []string{"ichekc", "the", "latst", "sommit,", "teat", "itih", "eht", "embedded", "pai", "key,", "is", "the", "llm", "even", "doing", "something,", "it", "feels", "like", "it", "is", "not", "even", "correcting", "thing"}

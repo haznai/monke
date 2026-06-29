@@ -1,6 +1,6 @@
 set dotenv-load
 
-ldflags := "-s -w -X 'github.com/hazn/monkeytype-tui/internal/llm.embeddedAPIKey=" + env("GROQ_API_KEY", "") + "'"
+ldflags := "-s -w -X 'github.com/hazn/monkeytype-tui/internal/llm.embeddedAPIKey=" + env("OPENROUTER_API_KEY", "") + "'"
 
 default:
   just --list

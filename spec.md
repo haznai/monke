@@ -125,13 +125,14 @@ This is the number that matters for the "type fast + LLM cleanup" workflow.
   [tab] restart  [enter] next test  [esc] menu
 ```
 
-### LLM Spellcheck (Future)
+### LLM Spellcheck
 
-- After test completion, send typed text to an LLM API for correction
-- Compare corrected output to target text
-- Calculate actual corrected accuracy (not assumed 100%)
-- API details TBD (user will provide later)
-- For now: assume LLM corrects all typos perfectly (optimistic corrected WPM)
+- After test completion, send typed text to OpenRouter for correction
+- Default model: `nvidia/llama-3.3-nemotron-super-49b-v1.5`
+- Default provider routing: low latency via `OPENROUTER_PROVIDER_SORT=latency`
+- Required key: `OPENROUTER_API_KEY` in the environment or `~/Library/Application Support/monkeytype-tui/.env`
+- Optional overrides: `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `OPENROUTER_PROVIDER_SORT`
+- Compare corrected output to target text and calculate actual LLM-corrected accuracy
 
 ## Stats Persistence
 

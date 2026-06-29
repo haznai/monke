@@ -36,6 +36,7 @@ type RequestInfo struct {
 	Provider            string
 	BaseURL             string
 	Model               string
+	ProviderSort        string
 	SystemPrompt        string
 	UserPrompt          string
 	Temperature         float64
@@ -45,17 +46,21 @@ type RequestInfo struct {
 }
 
 type chatRequest struct {
-	Model             string        `json:"model"`
-	Messages          []chatMessage `json:"messages"`
-	Temperature       float64       `json:"temperature"`
-	TopP              float64       `json:"top_p"`
-	MaxCompletionToks int           `json:"max_completion_tokens"`
-	ReasoningEffort   string        `json:"reasoning_effort"`
+	Model       string              `json:"model"`
+	Messages    []chatMessage       `json:"messages"`
+	Temperature float64             `json:"temperature"`
+	TopP        float64             `json:"top_p"`
+	MaxTokens   int                 `json:"max_tokens,omitempty"`
+	Provider    *providerPreference `json:"provider,omitempty"`
 }
 
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+type providerPreference struct {
+	Sort string `json:"sort,omitempty"`
 }
 
 type chatResponse struct {
@@ -85,27 +90,66 @@ type errorResponse struct {
 var embeddedAPIKey string
 
 const (
-	systemPrompt = "Correct this fast typing-test input. Treat each whitespace-separated input token as one output token: for every input token, output exactly one corrected token in the same position. Fix typos, missing apostrophes, punctuation, and capitalization when obvious. If unsure, leave the token unchanged. Output only the corrected text."
-	defaultURL   = "https://api.groq.com/openai/v1/chat/completions"
-	modelName    = "openai/gpt-oss-20b"
-	// gpt-oss spends completion budget on hidden reasoning. 128 can return
-	// empty content with finish_reason=length for noisy typo-heavy input.
+	systemPrompt        = "Correct this fast typing-test input. Treat each whitespace-separated input token as one output token: for every input token, output exactly one corrected token in the same position. Fix typos, missing apostrophes, punctuation, and capitalization when obvious. If unsure, leave the token unchanged. Output only the corrected text."
+	providerName        = "openrouter"
+	defaultURL          = "https://openrouter.ai/api/v1/chat/completions"
+	modelName           = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+	defaultProviderSort = "latency"
+
+	apiKeyEnv       = "OPENROUTER_API_KEY"
+	baseURLEnv      = "OPENROUTER_BASE_URL"
+	modelEnv        = "OPENROUTER_MODEL"
+	providerSortEnv = "OPENROUTER_PROVIDER_SORT"
+
 	maxCompletionTokens = 512
 )
 
-func loadAPIKey() string {
-	if key := os.Getenv("GROQ_API_KEY"); key != "" {
-		return key
-	}
+type config struct {
+	apiKey       string
+	baseURL      string
+	model        string
+	providerSort string
+}
 
-	if key := readAPIKeyFromEnvFile(appdir.EnvPath()); key != "" {
+func defaultConfig() config {
+	return config{
+		baseURL:      defaultURL,
+		model:        modelName,
+		providerSort: defaultProviderSort,
+	}
+}
+
+func loadConfig() config {
+	cfg := defaultConfig()
+	cfg.apiKey = loadAPIKey()
+	if baseURL := configValue(baseURLEnv); baseURL != "" {
+		cfg.baseURL = normalizeChatCompletionsURL(baseURL)
+	}
+	if model := configValue(modelEnv); model != "" {
+		cfg.model = model
+	}
+	if providerSort := configValue(providerSortEnv); providerSort != "" {
+		cfg.providerSort = normalizeProviderSort(providerSort)
+	}
+	return cfg
+}
+
+func loadAPIKey() string {
+	if key := configValue(apiKeyEnv); key != "" {
 		return key
 	}
 
 	return embeddedAPIKey
 }
 
-func readAPIKeyFromEnvFile(path string) string {
+func configValue(name string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return readEnvValueFromFile(appdir.EnvPath(), name)
+}
+
+func readEnvValueFromFile(path, name string) string {
 	f, err := os.Open(path)
 	if err != nil {
 		return ""
@@ -115,48 +159,80 @@ func readAPIKeyFromEnvFile(path string) string {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if k, v, ok := strings.Cut(line, "="); ok && k == "GROQ_API_KEY" {
-			return v
+		line = strings.TrimPrefix(line, "export ")
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok && strings.TrimSpace(k) == name {
+			return strings.Trim(strings.TrimSpace(v), `"'`)
 		}
 	}
 	return ""
 }
 
-func Spellcheck(typedWords []string) (*Result, error) {
-	apiKey := loadAPIKey()
-	if apiKey == "" {
-		return nil, fmt.Errorf("GROQ_API_KEY not set (env or %s)", appdir.EnvPath())
+func normalizeChatCompletionsURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.HasSuffix(baseURL, "/chat/completions") {
+		return baseURL
 	}
-	return spellcheck(typedWords, apiKey, defaultURL, http.DefaultClient)
+	return baseURL + "/chat/completions"
+}
+
+func normalizeProviderSort(providerSort string) string {
+	providerSort = strings.TrimSpace(providerSort)
+	switch strings.ToLower(providerSort) {
+	case "none", "off", "default":
+		return ""
+	default:
+		return providerSort
+	}
+}
+
+func Spellcheck(typedWords []string) (*Result, error) {
+	cfg := loadConfig()
+	if cfg.apiKey == "" {
+		return nil, fmt.Errorf("%s not set (env or %s)", apiKeyEnv, appdir.EnvPath())
+	}
+	return spellcheckWithConfig(typedWords, cfg, http.DefaultClient)
 }
 
 func SpellcheckRequestInfo(typedWords []string) RequestInfo {
+	return requestInfo(typedWords, loadConfig())
+}
+
+func requestInfo(typedWords []string, cfg config) RequestInfo {
 	return RequestInfo{
-		Provider:            "groq",
-		BaseURL:             defaultURL,
-		Model:               modelName,
+		Provider:            providerName,
+		BaseURL:             cfg.baseURL,
+		Model:               cfg.model,
+		ProviderSort:        cfg.providerSort,
 		SystemPrompt:        systemPrompt,
 		UserPrompt:          strings.Join(typedWords, " "),
 		Temperature:         0,
 		TopP:                0.2,
 		MaxCompletionTokens: maxCompletionTokens,
-		ReasoningEffort:     "low",
 	}
 }
 
 func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client) (*Result, error) {
+	cfg := defaultConfig()
+	cfg.apiKey = apiKey
+	cfg.baseURL = normalizeChatCompletionsURL(baseURL)
+	return spellcheckWithConfig(typedWords, cfg, client)
+}
+
+func spellcheckWithConfig(typedWords []string, cfg config, client *http.Client) (*Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	requestInfo := SpellcheckRequestInfo(typedWords)
-	requestInfo.BaseURL = baseURL
+	requestInfo := requestInfo(typedWords, cfg)
 
 	reqBody := chatRequest{
-		Model:             requestInfo.Model,
-		Temperature:       requestInfo.Temperature,
-		TopP:              requestInfo.TopP,
-		MaxCompletionToks: requestInfo.MaxCompletionTokens,
-		ReasoningEffort:   requestInfo.ReasoningEffort,
+		Model:       requestInfo.Model,
+		Temperature: requestInfo.Temperature,
+		TopP:        requestInfo.TopP,
+		MaxTokens:   requestInfo.MaxCompletionTokens,
+		Provider:    providerPreferenceForSort(requestInfo.ProviderSort),
 		Messages: []chatMessage{
 			{Role: "system", Content: requestInfo.SystemPrompt},
 			{Role: "user", Content: requestInfo.UserPrompt},
@@ -168,12 +244,13 @@ func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.baseURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Authorization", "Bearer "+cfg.apiKey)
+	req.Header.Set("X-Title", "monke")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -232,4 +309,11 @@ func spellcheck(typedWords []string, apiKey, baseURL string, client *http.Client
 		CompletionTokens:  chatResp.Usage.CompletionTokens,
 		TotalTokens:       chatResp.Usage.TotalTokens,
 	}, nil
+}
+
+func providerPreferenceForSort(providerSort string) *providerPreference {
+	if providerSort == "" {
+		return nil
+	}
+	return &providerPreference{Sort: providerSort}
 }
